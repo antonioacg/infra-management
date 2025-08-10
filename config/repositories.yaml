@@ -95,10 +95,8 @@ bootstrap:
       
   # Cleanup operations
   cleanup:
-    remove_workspace: true
+    remove_workspace: true  # This automatically cleans up temporary SOPS keys in workspace
     kill_background_processes: true
-    temporary_files:
-      - "~/.config/sops/age/keys.txt"
     preserve_logs: true
 
 # Tool installation configuration
@@ -179,9 +177,9 @@ security:
   workspace_permissions: "700"
   cleanup_sensitive_files: true
   
-  # Files that should be cleaned up after bootstrap
+  # Note: SOPS keys are now stored in workspace and cleaned up automatically
+  # No persistent sensitive files should remain after bootstrap
   sensitive_files:
-    - "~/.config/sops/age/keys.txt"
     - "/tmp/vault-token"
     - "/tmp/terraform-vars"
 

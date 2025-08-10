@@ -83,13 +83,15 @@ main() {
 
     # Phase 2: Setup environment
     log_info "Phase 2: Setting up environment"
-    mkdir -p ~/.config/sops/age/
-    echo "$SOPS_AGE_KEY" > ~/.config/sops/age/keys.txt
-    chmod 600 ~/.config/sops/age/keys.txt
-    export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
+    # Create temporary SOPS key file (will be cleaned up automatically)
+    TEMP_SOPS_DIR="$WORKSPACE/.sops"
+    mkdir -p "$TEMP_SOPS_DIR"
+    echo "$SOPS_AGE_KEY" > "$TEMP_SOPS_DIR/keys.txt"
+    chmod 600 "$TEMP_SOPS_DIR/keys.txt"
+    export SOPS_AGE_KEY_FILE="$TEMP_SOPS_DIR/keys.txt"
     export GITHUB_TOKEN="$GITHUB_TOKEN"
     export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-    log_success "Environment configured"
+    log_success "Environment configured (temporary SOPS key in workspace)"
 
     # Phase 3: Deploy GitOps stack
     log_info "Phase 3: Deploying GitOps stack from deployments repository"
