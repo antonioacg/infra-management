@@ -1,0 +1,201 @@
+# Repository Configuration for Bootstrap Orchestrator
+
+repositories:
+  deployments:
+    url: "https://github.com/antonioacg/deployments.git"
+    branch: "main"
+    install_script: "./install.sh"
+    description: "Kubernetes GitOps manifests and Flux configuration"
+    required_tools:
+      - kubectl
+      - flux
+      - sops
+      - jq
+    health_checks:
+      - command: "kubectl get pods -n flux-system"
+        expected_status: "Running"
+      - command: "flux get all --all-namespaces"
+        timeout: 60
+  
+  infra:
+    url: "https://github.com/antonioacg/infra.git"
+    branch: "main"
+    terraform_path: "envs/prod"
+    description: "Terraform infrastructure and Vault secret management"
+    required_tools:
+      - terraform
+      - vault
+    health_checks:
+      - command: "terraform version"
+        expected_status: 0
+      - command: "vault status"
+        timeout: 30
+
+bootstrap:
+  workspace: "/tmp/bootstrap-workspace"
+  timeout: 600  # seconds
+  retry_attempts: 3
+  cleanup_on_failure: true
+  
+  # Environment variables required for bootstrap
+  required_env_vars:
+    - GITHUB_TOKEN
+    - SOPS_AGE_KEY_FILE
+    - KUBECONFIG
+  
+  # Phases of bootstrap execution
+  phases:
+    - name: "environment_setup"
+      description: "Install k3s and setup basic environment"
+      timeout: 300
+      
+    - name: "gitops_deployment"
+      description: "Deploy Flux GitOps stack from deployments repository"
+      timeout: 300
+      depends_on: ["environment_setup"]
+      
+    - name: "vault_initialization"
+      description: "Wait for Vault to be ready and initialize if needed"
+      timeout: 300
+      depends_on: ["gitops_deployment"]
+      
+    - name: "infrastructure_setup"
+      description: "Run Terraform to populate secrets in Vault"
+      timeout: 300
+      depends_on: ["vault_initialization"]
+      
+    - name: "verification"
+      description: "Verify all components are healthy"
+      timeout: 120
+      depends_on: ["infrastructure_setup"]
+
+  # Health check commands to run after bootstrap
+  verify_commands:
+    - command: "kubectl get nodes"
+      description: "Check Kubernetes nodes are ready"
+      timeout: 30
+      
+    - command: "kubectl get pods -A | grep -v Running | grep -v Completed | grep -v Succeeded"
+      description: "Check for unhealthy pods"
+      timeout: 30
+      expect_empty: true
+      
+    - command: "flux get all --all-namespaces"
+      description: "Verify Flux GitOps status"
+      timeout: 60
+      
+    - command: "kubectl get externalsecrets -A"
+      description: "Check External Secrets synchronization"
+      timeout: 30
+      optional: true
+      
+    - command: "kubectl exec -n vault vault-0 -- vault status"
+      description: "Verify Vault is unsealed and ready"
+      timeout: 30
+      
+  # Cleanup operations
+  cleanup:
+    remove_workspace: true
+    kill_background_processes: true
+    temporary_files:
+      - "~/.config/sops/age/keys.txt"
+    preserve_logs: true
+
+# Tool installation configuration
+tools:
+  k3s:
+    install_url: "https://get.k3s.io"
+    verify_command: "kubectl cluster-info"
+    
+  flux:
+    install_url: "https://fluxcd.io/install.sh"
+    verify_command: "flux version --client"
+    
+  sops:
+    version: "v3.8.1"
+    download_url: "https://github.com/mozilla/sops/releases/download/{version}/sops-{version}.linux.amd64"
+    install_path: "/usr/local/bin/sops"
+    verify_command: "sops --version"
+    
+  terraform:
+    version: "1.6.6" 
+    download_url: "https://releases.hashicorp.com/terraform/{version}/terraform_{version}_linux_amd64.zip"
+    install_path: "/usr/local/bin/terraform"
+    verify_command: "terraform version"
+
+# Vault configuration
+vault:
+  address: "http://localhost:8200"
+  port_forward:
+    namespace: "vault"
+    service: "vault"
+    local_port: 8200
+    remote_port: 8200
+  
+  auth_methods:
+    - name: "kubernetes"
+      mount_path: "kubernetes"
+      
+  secret_engines:
+    - name: "kv"
+      type: "kv-v2" 
+      path: "secret"
+
+# External Secrets Operator configuration
+external_secrets:
+  namespace: "external-secrets-system"
+  cluster_secret_store: "vault-backend"
+  refresh_interval: "1m"
+  
+  vault_connection:
+    server: "http://vault.vault.svc.cluster.local:8200"
+    path: "secret"
+    version: "v2"
+    auth:
+      kubernetes:
+        mount_path: "kubernetes"
+        role: "external-secrets"
+
+# Monitoring and alerting (future use)
+monitoring:
+  enable_health_checks: true
+  check_interval: "30s"
+  alert_on_failure: false
+  
+  # Components to monitor
+  components:
+    - name: "kubernetes"
+      endpoint: "https://kubernetes.default.svc:443/healthz"
+      
+    - name: "vault"
+      endpoint: "http://vault.vault.svc.cluster.local:8200/v1/sys/health"
+      
+    - name: "flux"
+      check_command: "flux get all --all-namespaces"
+
+# Security settings
+security:
+  age_key_permissions: "600"
+  workspace_permissions: "700"
+  cleanup_sensitive_files: true
+  
+  # Files that should be cleaned up after bootstrap
+  sensitive_files:
+    - "~/.config/sops/age/keys.txt"
+    - "/tmp/vault-token"
+    - "/tmp/terraform-vars"
+
+# Logging configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  output: "console"  # console, file
+  timestamp: true
+  component_logs:
+    preserve: true
+    directory: "/tmp/bootstrap-logs"
+    components:
+      - "k3s"
+      - "flux"
+      - "vault"
+      - "terraform"
+      - "external-secrets"
