@@ -210,6 +210,8 @@ deploy_infrastructure_phase() {
     log_info "Waiting for Flux CRDs to be ready..."
     kubectl wait --for condition=established --timeout=60s crd/kustomizations.kustomize.toolkit.fluxcd.io
     kubectl wait --for condition=established --timeout=60s crd/gitrepositories.source.toolkit.fluxcd.io
+    kubectl wait --for condition=established --timeout=60s crd/helmreleases.helm.toolkit.fluxcd.io
+    kubectl wait --for condition=established --timeout=60s crd/helmrepositories.source.toolkit.fluxcd.io
     log_success "Flux CRDs are ready"
     
     # Apply our existing GitRepository and Kustomization resources
@@ -221,9 +223,29 @@ deploy_infrastructure_phase() {
         --namespace=flux-system \
         --dry-run=client -o yaml | kubectl apply -f -
     
-    # Apply the production infrastructure using kustomize
+    # Phase 1: Apply base infrastructure (namespaces, helm repos, helm releases)
+    log_info "Phase 1: Applying base infrastructure resources..."
     kubectl apply -k clusters/production/infrastructure/
-    log_success "Infrastructure manifests applied"
+    log_success "Base infrastructure applied"
+    
+    # Phase 2: Wait for External Secrets to be ready
+    log_info "Phase 2: Waiting for External Secrets deployment..."
+    if kubectl wait --for=condition=Ready helmrelease/external-secrets -n external-secrets-system --timeout=300s; then
+        log_success "External Secrets deployment ready"
+    else
+        log_error "External Secrets deployment failed - continuing anyway"
+    fi
+    
+    # Wait for External Secrets CRDs to be established
+    log_info "Waiting for External Secrets CRDs to be ready..."
+    kubectl wait --for condition=established --timeout=120s crd/clustersecretstores.external-secrets.io || log_warning "ClusterSecretStore CRD not ready yet"
+    kubectl wait --for condition=established --timeout=120s crd/externalsecrets.external-secrets.io || log_warning "ExternalSecret CRD not ready yet"
+    log_success "External Secrets CRDs ready"
+    
+    # Phase 3: Apply CRD-dependent resources if they weren't applied already
+    log_info "Phase 3: Ensuring all resources are applied..."
+    kubectl apply -k clusters/production/infrastructure/
+    log_success "All infrastructure manifests applied"
     
     log_success "Infrastructure phase deployed"
 }
