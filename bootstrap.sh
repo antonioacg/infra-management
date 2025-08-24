@@ -181,7 +181,9 @@ deploy_infrastructure_phase() {
     log_info "Deploying infrastructure components (Vault + External Secrets Operator)..."
     
     cd "$WORKSPACE"
-    git clone "$DEPLOYMENTS_REPO" deployments
+    # Clone with GitHub token authentication
+    DEPLOYMENTS_REPO_WITH_AUTH="https://$GITHUB_TOKEN@github.com/antonioacg/deployments.git"
+    git clone "$DEPLOYMENTS_REPO_WITH_AUTH" deployments
     cd deployments
     
     # Create temporary Flux bootstrap with GitHub token
