@@ -197,23 +197,27 @@ deploy_infrastructure_phase() {
     cd deployments
     log_info "Changed to deployments directory: $(pwd)"
     
-    # Create temporary Flux bootstrap with GitHub token
-    log_info "Starting Flux bootstrap with GitHub authentication"
-    log_info "GITHUB_TOKEN length: ${#GITHUB_TOKEN} characters"
-    log_info "GITHUB_TOKEN starts with: ${GITHUB_TOKEN:0:10}..."
+    # Install Flux controllers without Git operations (clean approach)
+    log_info "Installing Flux controllers in cluster (no Git writes)"
     
-    export GITHUB_TOKEN
-    log_info "About to run: flux bootstrap github --owner=antonioacg --repository=deployments --branch=main --path=clusters/production/infrastructure --token-auth"
-    
-    if ! flux bootstrap github \
-        --owner=antonioacg \
-        --repository=deployments \
-        --branch=main \
-        --path=clusters/production/infrastructure \
-        --token-auth; then
-        log_error "Flux bootstrap failed - check GitHub token permissions and repository access"
+    if ! flux install; then
+        log_error "Flux install failed"
         exit 1
     fi
+    log_success "Flux controllers installed"
+    
+    # Apply our existing GitRepository and Kustomization resources
+    log_info "Applying GitRepository and Kustomization from deployments repo"
+    
+    # Create temporary GitHub token secret for GitRepository
+    kubectl create secret generic github-auth \
+        --from-literal=password="$GITHUB_TOKEN" \
+        --namespace=flux-system \
+        --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Apply the production infrastructure
+    kubectl apply -f clusters/production/infrastructure/
+    log_success "Infrastructure manifests applied"
     
     log_success "Infrastructure phase deployed"
 }
