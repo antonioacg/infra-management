@@ -221,8 +221,8 @@ deploy_infrastructure_phase() {
         --namespace=flux-system \
         --dry-run=client -o yaml | kubectl apply -f -
     
-    # Apply the production infrastructure
-    kubectl apply -f clusters/production/infrastructure/
+    # Apply the production infrastructure using kustomize
+    kubectl apply -k clusters/production/infrastructure/
     log_success "Infrastructure manifests applied"
     
     log_success "Infrastructure phase deployed"
