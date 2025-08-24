@@ -181,20 +181,39 @@ deploy_infrastructure_phase() {
     log_info "Deploying infrastructure components (Vault + External Secrets Operator)..."
     
     cd "$WORKSPACE"
+    log_info "Current working directory: $(pwd)"
+    
     # Clone with GitHub token authentication
+    log_info "Starting git clone of deployments repository..."
     DEPLOYMENTS_REPO_WITH_AUTH="https://$GITHUB_TOKEN@github.com/antonioacg/deployments.git"
-    git clone "$DEPLOYMENTS_REPO_WITH_AUTH" deployments
+    log_info "Cloning from: https://***TOKEN***@github.com/antonioacg/deployments.git"
+    
+    if ! git clone "$DEPLOYMENTS_REPO_WITH_AUTH" deployments; then
+        log_error "Git clone failed - check GitHub token and repository access"
+        exit 1
+    fi
+    log_success "Git clone completed successfully"
+    
     cd deployments
+    log_info "Changed to deployments directory: $(pwd)"
     
     # Create temporary Flux bootstrap with GitHub token
-    log_info "Bootstrapping Flux with direct GitHub authentication"
+    log_info "Starting Flux bootstrap with GitHub authentication"
+    log_info "GITHUB_TOKEN length: ${#GITHUB_TOKEN} characters"
+    log_info "GITHUB_TOKEN starts with: ${GITHUB_TOKEN:0:10}..."
+    
     export GITHUB_TOKEN
-    flux bootstrap github \
+    log_info "About to run: flux bootstrap github --owner=antonioacg --repository=deployments --branch=main --path=clusters/production/infrastructure --token-auth"
+    
+    if ! flux bootstrap github \
         --owner=antonioacg \
         --repository=deployments \
         --branch=main \
         --path=clusters/production/infrastructure \
-        --token-auth
+        --token-auth; then
+        log_error "Flux bootstrap failed - check GitHub token permissions and repository access"
+        exit 1
+    fi
     
     log_success "Infrastructure phase deployed"
 }
