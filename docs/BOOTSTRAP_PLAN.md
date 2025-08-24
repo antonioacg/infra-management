@@ -200,7 +200,6 @@ set -e
 # Required environment variables (only needed during bootstrap)
 required_vars=(
     "GITHUB_TOKEN"
-    "CLOUDFLARE_TUNNEL_TOKEN"
 )
 
 main() {
