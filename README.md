@@ -84,8 +84,8 @@ kubectl exec -n vault vault-0 -- vault status
 ## Support
 
 For issues or questions:
-- Check [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
-- Review component logs: `kubectl logs -n <namespace> <pod-name>`
+- Check troubleshooting commands in workspace CLAUDE.md
+- Review component logs: `kubectl logs -n <namespace> <pod-name>`  
 - Verify prerequisites and retry bootstrap
 
 ## Security Model
