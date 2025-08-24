@@ -223,6 +223,24 @@ deploy_infrastructure_phase() {
         --namespace=flux-system \
         --dry-run=client -o yaml | kubectl apply -f -
     
+    # Create GitRepository resource for proper GitOps setup
+    log_info "Creating GitRepository resource for ongoing GitOps sync..."
+    kubectl apply -f - <<EOF
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: deployments
+  namespace: flux-system
+spec:
+  interval: 1m0s
+  ref:
+    branch: main
+  secretRef:
+    name: github-auth
+  url: ${DEPLOYMENTS_REPO}
+EOF
+    log_success "GitRepository created for ongoing sync"
+    
     # Phase 1: Apply base infrastructure (namespaces, helm repos, helm releases)
     log_info "Phase 1: Applying base infrastructure resources..."
     kubectl apply -k clusters/production/infrastructure/
@@ -242,10 +260,16 @@ deploy_infrastructure_phase() {
     kubectl wait --for condition=established --timeout=120s crd/externalsecrets.external-secrets.io || log_warning "ExternalSecret CRD not ready yet"
     log_success "External Secrets CRDs ready"
     
-    # Phase 3: Apply CRD-dependent resources if they weren't applied already
-    log_info "Phase 3: Ensuring all resources are applied..."
-    kubectl apply -k clusters/production/infrastructure/
-    log_success "All infrastructure manifests applied"
+    # Phase 3: Reconcile GitRepository and Kustomization for proper GitOps
+    log_info "Phase 3: Setting up proper GitOps reconciliation..."
+    
+    # Force GitRepository to sync latest changes
+    flux reconcile source git deployments
+    
+    # Now reconcile the kustomization which should have the GitRepository available
+    flux reconcile kustomization namespaces
+    
+    log_success "GitOps reconciliation completed - Flux now managing infrastructure"
     
     log_success "Infrastructure phase deployed"
 }
