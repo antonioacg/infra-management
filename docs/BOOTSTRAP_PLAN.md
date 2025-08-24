@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the plan to achieve zero secrets in Git while maintaining maximum operational simplicity. The approach uses a **3-repository architecture** with External Secrets Operator + Terraform + curl|bash bootstrap for enterprise-grade secret management with minimal complexity.
+This document outlines the complete implementation of zero secrets in Git for greenfield deployments. The approach uses a **phase-based bootstrap** with a **3-repository architecture**, External Secrets Operator, and self-referencing Terraform for enterprise-grade secret management with minimal operational complexity.
 
 ## 3-Repository Architecture
 
@@ -35,15 +35,15 @@ This document outlines the plan to achieve zero secrets in Git while maintaining
 
 ### What Works Well
 - ✅ GitOps deployment with Flux
-- ✅ SOPS + Age encryption for secrets
-- ✅ Remote deployment via `./install.sh` + kubectl context
 - ✅ Vault initialization and unsealing automation
 - ✅ Simple bootstrap process from any machine
+- ✅ Remote deployment capability
+- ✅ Terraform infrastructure management
 
-### Current Limitations
-- ❌ Secrets still stored in Git (encrypted, but present)
-- ❌ Manual secret management via SOPS files
-- ❌ Terraform secrets hardcoded in tfvars
+### Previous Limitations (Now Solved)
+- ~~❌ Secrets still stored in Git~~ → ✅ Zero secrets in Git with External Secrets
+- ~~❌ Manual secret management~~ → ✅ Automatic Vault → External Secrets sync
+- ~~❌ Terraform secrets hardcoded~~ → ✅ Self-referencing Terraform patterns
 
 ## Target Architecture
 
@@ -58,9 +58,19 @@ Developer Machine → Terraform → Vault → External Secrets Operator → Kube
 3. **Terraform**: Declarative secret management in Vault
 4. **Flux**: GitOps deployment (unchanged)
 
-## Implementation Plan
+## Phase-Based Bootstrap Implementation
 
-### Phase 1: External Secrets Operator Integration
+### Five-Phase Bootstrap Architecture
+
+The bootstrap process is organized into five sequential phases that ensure proper component dependencies and eliminate transient error states:
+
+1. **Phase 1**: Core Infrastructure (k3s + Flux + Vault + External Secrets)
+2. **Phase 2**: Secret Population (ALL secrets → Vault via Terraform)
+3. **Phase 3**: Flux Authentication Switch (External Secrets for Git auth)
+4. **Phase 4**: Application Deployment (working External Secrets)
+5. **Phase 5**: Verification and Cleanup (security validation)
+
+### External Secrets Operator Integration
 
 #### Add to GitOps Repository
 ```
@@ -159,106 +169,111 @@ resource "vault_kv_secret_v2" "secrets" {
 }
 ```
 
-## Bootstrap Implementation
+## Unified Bootstrap Implementation
 
 ### Infra-Management Repository Structure
 ```
 infra-management/
-├── bootstrap.sh                    # Master bootstrap script
+├── bootstrap.sh                    # Unified bootstrap script (environment variables only)
 ├── README.md                       # Quick start guide
 ├── docs/
-│   ├── BOOTSTRAP_PLAN.md          # This document (moved from ops repo)
-│   ├── TROUBLESHOOTING.md         # Common issues and solutions
-│   └── ARCHITECTURE.md            # System architecture overview
-├── scripts/
-│   ├── install-tools.sh           # Tool installation helpers
-│   └── verify-deployment.sh       # Post-bootstrap verification
-└── config/
-    └── repositories.yaml          # Repository URLs and configurations
+│   ├── BOOTSTRAP_PLAN.md          # This document
+│   ├── GITOPS_WORKFLOW.md         # GitOps workflow documentation
+│   ├── SECRET_MANAGEMENT.md       # Zero-secrets architecture
+│   ├── COMPONENT_INTERACTIONS.md  # System architecture diagrams
+│   └── OPERATIONAL_PROCEDURES.md  # Daily operations and troubleshooting
+└── scripts/
+    └── verify-deployment.sh       # Post-bootstrap verification
 ```
 
-### Master Bootstrap Script
-Create `infra-management/bootstrap.sh`:
+### Phase-Based Bootstrap Script
+
+The `infra-management/bootstrap.sh` implements the five-phase architecture with environment variables for maximum security:
 
 ```bash
 #!/bin/bash
 set -e
 
-# Parse arguments
-GITHUB_TOKEN="$1"
-SOPS_AGE_KEY="$2"
-CLOUDFLARE_TUNNEL_TOKEN="$3"
+# Zero-Secrets Phase-Based Bootstrap Orchestrator
+# Implements complete zero-secrets architecture with proper sequencing
 
-# Configuration
-DEPLOYMENTS_REPO="https://github.com/antonioacg/deployments.git"
-INFRA_REPO="https://github.com/antonioacg/infra.git"
-WORKSPACE="/tmp/bootstrap-workspace"
+# Required environment variables (only needed during bootstrap)
+required_vars=(
+    "GITHUB_TOKEN"
+    "CLOUDFLARE_TUNNEL_TOKEN"
+)
 
-echo "🚀 Starting zero-secrets bootstrap..."
-echo "📁 Creating workspace: $WORKSPACE"
-mkdir -p $WORKSPACE
-cd $WORKSPACE
+main() {
+    echo "🚀 Zero-Secrets Phase-Based Bootstrap Orchestrator"
+    echo "Architecture: Environment Variables → Terraform → Vault → External Secrets → Kubernetes"
+    
+    validate_environment
+    
+    # Phase 1: Infrastructure Bootstrap
+    log_phase "1" "Core Infrastructure (k3s + Flux + Vault + External Secrets)"
+    install_k3s
+    install_tools
+    deploy_infrastructure_phase    # Only infrastructure components
+    wait_for_vault_ready
+    
+    # Phase 2: Secret Population
+    log_phase "2" "Populate ALL secrets in Vault via Terraform"
+    populate_vault_with_all_secrets  # Including GitHub token
+    
+    # Phase 3: Flux External Secrets Authentication
+    log_phase "3" "Switch Flux to External Secrets authentication"
+    deploy_flux_auth_phase          # External Secret for GitHub token
+    
+    # Phase 4: Application Deployment
+    log_phase "4" "Deploy applications with working External Secrets"
+    deploy_applications_phase       # External Secrets work immediately
+    
+    # Phase 5: Verification & Cleanup
+    log_phase "5" "Verification and cleanup"
+    verify_all_phases
+    cleanup_bootstrap_secrets       # Remove env vars, clean workspace
+    
+    echo "✅ Zero-Secrets Phase-Based Bootstrap completed successfully!"
+    echo "🔒 Security: All bootstrap secrets cleared from environment"
+    echo "🏛️  Secret Management: All secrets now managed through Vault + External Secrets"
+}
 
-# 1. Install k3s
-echo "📦 Installing k3s..."
-curl -sfL https://get.k3s.io | sh -
-sudo chmod 644 /etc/rancher/k3s/k3s.yaml
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+deploy_infrastructure_phase() {
+    # Bootstrap Flux with direct GitHub authentication (temporary)
+    flux bootstrap git \
+        --url="$DEPLOYMENTS_REPO" \
+        --branch=main \
+        --path=clusters/production/infrastructure \
+        --token-auth
+}
 
-# 2. Setup environment
-echo "⚙️ Setting up environment..."
-mkdir -p ~/.config/sops/age/
-echo "$SOPS_AGE_KEY" > ~/.config/sops/age/keys.txt
-export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
-export GITHUB_TOKEN="$GITHUB_TOKEN"
+populate_vault_with_all_secrets() {
+    # Connect to Vault and populate ALL secrets including GitHub token
+    export TF_VAR_github_token="$GITHUB_TOKEN"              # For Flux
+    export TF_VAR_cloudflare_tunnel_token="$CLOUDFLARE_TUNNEL_TOKEN"
+    
+    terraform init && terraform apply -auto-approve
+}
 
-# 3. Clone and deploy GitOps stack
-echo "📥 Cloning deployments repository..."
-git clone $DEPLOYMENTS_REPO deployments
-cd deployments
-echo "🔧 Deploying GitOps stack..."
-./install.sh
-cd ..
+deploy_flux_auth_phase() {
+    # Deploy External Secret for GitHub token and restart Flux controllers
+    flux reconcile source git flux-system
+    kubectl rollout restart deployment -n flux-system
+}
 
-# 4. Wait for Vault to be ready
-echo "⏳ Waiting for Vault to be ready..."
-kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=vault -n vault --timeout=300s
+cleanup_bootstrap_secrets() {
+    # Clear ALL bootstrap secrets from environment
+    for var in "${required_vars[@]}"; do
+        unset "$var" 2>/dev/null || true
+    done
+    
+    # Clear TF_VAR_* variables
+    for var in $(env | grep "^TF_VAR_" | cut -d= -f1); do
+        unset "$var" 2>/dev/null || true
+    done
+}
 
-# 5. Clone infra repository and setup Terraform
-echo "📥 Cloning infrastructure repository..."
-git clone $INFRA_REPO infra
-cd infra/envs/prod
-
-echo "🔐 Populating secrets via Terraform..."
-# Port-forward to Vault
-kubectl port-forward -n vault svc/vault 8200:8200 &
-VAULT_PF_PID=$!
-sleep 5
-
-# Setup Vault connection
-export VAULT_ADDR="http://localhost:8200"
-export VAULT_TOKEN="$(kubectl get secret -n vault vault-init-keys -o jsonpath='{.data.VAULT_ROOT_TOKEN}' | base64 -d)"
-
-# Set Terraform variables
-export TF_VAR_cloudflare_tunnel_token="$CLOUDFLARE_TUNNEL_TOKEN"
-
-# Run Terraform
-terraform init
-terraform apply -auto-approve
-
-# Cleanup
-kill $VAULT_PF_PID
-cd $WORKSPACE
-
-# 6. Verification
-echo "🔍 Running post-deployment verification..."
-kubectl get externalsecrets -A 2>/dev/null || echo "External Secrets not yet deployed"
-flux get all --all-namespaces
-kubectl get pods -A | grep -E "(vault|cloudflared|external-secrets)"
-
-echo "✅ Bootstrap complete! All secrets are now managed via Vault and External Secrets Operator."
-echo "🧹 Cleaning up workspace..."
-rm -rf $WORKSPACE
+main "$@"
 ```
 
 ### Ultra-Simple Bootstrap Command
@@ -266,11 +281,27 @@ rm -rf $WORKSPACE
 ```bash
 # From any machine with SSH access to fresh Ubuntu server:
 ssh user@new-server
-curl -sSL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | \
-  bash -s \
-  "github_token_here" \
-  "$(cat ~/.config/sops/age/keys.txt)" \
-  "cloudflare_tunnel_token_here"
+
+# Set environment variables (more secure than command-line arguments)
+export GITHUB_TOKEN="ghp_your_github_token_here"
+export CLOUDFLARE_TUNNEL_TOKEN="your_cloudflare_tunnel_token_here"
+
+# Single command bootstrap (all five phases automatic)
+curl -sSL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | bash
+```
+
+Or as a one-liner:
+```bash
+GITHUB_TOKEN="ghp_xxx" \
+CLOUDFLARE_TUNNEL_TOKEN="eyJhxxx" \
+curl -sSL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | bash
+
+# Bootstrap automatically handles:
+# Phase 1: k3s + Flux + Vault + External Secrets
+# Phase 2: ALL secrets → Vault (including GitHub token)
+# Phase 3: Flux switches to External Secrets auth
+# Phase 4: Applications deploy with working secrets
+# Phase 5: Verification + environment cleanup
 ```
 
 ### Repository Configuration
@@ -298,28 +329,44 @@ bootstrap:
     - "kubectl get externalsecrets -A"
 ```
 
-## Future Secret Management Workflow
+## Secret Management Workflow
 
-### Adding New Secrets
+### Adding New Secrets (Greenfield)
 
-1. **Define in Terraform:**
+1. **Add to bootstrap environment variables:**
+```bash
+# When running bootstrap, include new secrets
+export GITHUB_TOKEN="ghp_xxx"
+export CLOUDFLARE_TUNNEL_TOKEN="eyJh"
+export NEW_APP_DB_PASSWORD="secure_password"  # New secret
+```
+
+2. **Define in Terraform with self-referencing pattern:**
 ```hcl
+# Self-referencing pattern for ongoing operations
+data "vault_kv_secret_v2" "existing_app" {
+  count = var.new_app_db_password == "" ? 1 : 0
+  mount = "secret"
+  name  = "myapp/database"
+}
+
 resource "vault_kv_secret_v2" "new_app_secrets" {
-  mount = vault_mount.kv.path
+  mount = "secret"
   path  = "myapp/database"
-  data = {
-    username = var.db_username
-    password = var.db_password
-  }
+  data_json = jsonencode({
+    username = "myapp_user"
+    password = var.new_app_db_password != "" ? var.new_app_db_password : data.vault_kv_secret_v2.existing_app[0].data["password"]
+  })
 }
 ```
 
-2. **Create ExternalSecret:**
+3. **Create ExternalSecret in deployments repository:**
 ```yaml
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
   name: myapp-db-secrets
+  namespace: myapp
 spec:
   secretStoreRef:
     name: vault-backend
@@ -327,44 +374,65 @@ spec:
   target:
     name: myapp-db-secrets
   data:
-  - secretKey: username
+  - secretKey: DB_USERNAME
     remoteRef:
-      key: myapp/database
+      key: secret/myapp/database
       property: username
+  - secretKey: DB_PASSWORD
+    remoteRef:
+      key: secret/myapp/database
+      property: password
 ```
 
-3. **Deploy via GitOps:**
-- Commit ExternalSecret to Git
-- Flux automatically deploys
-- External Secrets Operator syncs from Vault
+4. **Deployment Flow:**
+- Bootstrap populates secrets in Vault (Phase 2)
+- Applications deploy with working External Secrets (Phase 4)
+- No transient error states
 
-### Secret Updates
+### Ongoing Secret Updates (Post-Bootstrap)
 
 ```bash
-# Update secrets via Terraform
+# Self-referencing Terraform works without environment variables
 cd infra/envs/prod
-export TF_VAR_new_secret_value="updated_value"
-terraform apply
-# External Secrets Operator automatically syncs changes
+export VAULT_ADDR="http://localhost:8200"
+export VAULT_TOKEN="$(kubectl get secret -n vault vault-init-keys -o jsonpath='{.data.VAULT_ROOT_TOKEN}' | base64 -d)"
+
+# Option 1: Update existing secret (reads from Vault)
+kubectl port-forward -n vault svc/vault 8200:8200 &
+terraform apply  # Uses existing values from Vault
+kill %1
+
+# Option 2: Provide new value via environment variable  
+export TF_VAR_new_app_db_password="updated_password"
+kubectl port-forward -n vault svc/vault 8200:8200 &
+terraform apply  # Uses new value, updates Vault
+kill %1
+
+# External Secrets Operator automatically syncs within 1 minute
 ```
 
-## Migration Steps from Current Setup
+## Greenfield Implementation Steps
 
-### Step 1: Prepare External Secrets Operator
-1. Add External Secrets manifests to GitOps repository
-2. Update main kustomization.yaml to include external-secrets
-3. Commit and let Flux deploy
+Since this is a greenfield deployment with no legacy constraints, implementation is straightforward:
 
-### Step 2: Migrate Cloudflared Secret
-1. Add cloudflared ExternalSecret manifest
-2. Update Terraform to include cloudflare/tunnel secret
-3. Remove cloudflared-credentials.sops.yaml from Git
-4. Run Terraform to populate Vault
+### Step 1: Create Repository Structure
+1. Create `infra-management` repository with unified bootstrap script
+2. Ensure `deployments` repository has External Secrets Operator manifests
+3. Ensure `infra` repository has Terraform Vault secret resources
 
-### Step 3: Verify and Clean Up
-1. Verify cloudflared pod uses synced secret
-2. Remove SOPS encrypted files from Git
-3. Update documentation and workflows
+### Step 2: Prepare Secrets
+1. Collect all required secrets (GitHub token, Cloudflare tunnel token, etc.)
+2. Set as environment variables before running bootstrap
+
+### Step 3: Execute Bootstrap
+1. Run single bootstrap command with environment variables
+2. Bootstrap automatically handles: k3s → Flux → Vault unsealing → secret population
+3. Verify all applications start successfully
+
+### Step 4: Operational Readiness
+1. Test secret updates via Terraform
+2. Verify External Secrets synchronization
+3. Document operational procedures
 
 ## Operational Benefits
 
@@ -375,10 +443,11 @@ terraform apply
 - ✅ Audit trail for all secret access
 
 ### Simplicity
-- ✅ One-command bootstrap from fresh machine
-- ✅ Declarative secret management via Terraform
-- ✅ Automatic secret synchronization
-- ✅ No manual SOPS encryption/decryption
+- ✅ Single environment variable bootstrap command (five phases automatic)
+- ✅ No command-line secrets (environment variables are more secure)
+- ✅ Self-referencing Terraform (works with or without environment variables)
+- ✅ Automatic secret synchronization via External Secrets
+- ✅ Zero-secrets architecture with zero transient error states
 
 ### Scalability
 - ✅ Easy to add new applications and secrets
@@ -458,31 +527,58 @@ terraform show
 - Alerts for failed secret synchronizations
 - Dashboard for secret management operations
 
-## Migration from Current Setup
+## Vault Unseal Keys Security Assessment
 
-### Step 1: Create Infra-Management Repository
-1. Create new GitHub repository: `infra-management`
-2. Move `BOOTSTRAP_PLAN.md` from ops repository to `infra-management/docs/`
-3. Create master bootstrap script as shown above
-4. Add repository configuration and helper scripts
+### Kubernetes Secret Storage Approach
 
-### Step 2: Update Repository References
-1. Update deployments repository URL in bootstrap script
-2. Ensure infra repository is accessible and properly structured
-3. Test bootstrap script with new 3-repo architecture
+**Current Implementation:**
+- Vault unseal keys stored in Kubernetes secret `vault-init-keys`
+- Keys are base64 encoded by default (not encrypted at rest)
+- Accessible via Kubernetes RBAC controls
 
-### Step 3: Enhance Documentation
-1. Create `infra-management/README.md` with quick start guide
-2. Add `TROUBLESHOOTING.md` for common issues
-3. Create `ARCHITECTURE.md` with system overview
-4. Update existing repository documentation to reference bootstrap repo
+**Security Considerations:**
+- ✅ **Acceptable for greenfield single-node k3s deployments**
+- ✅ **Proper RBAC limits access to authorized service accounts**
+- ✅ **Keys only exist during bootstrap and normal operations**
+- ✅ **Can be enhanced with Kubernetes encryption at rest**
+
+### Recommended Security Enhancements
+
+1. **Enable Kubernetes Encryption at Rest:**
+```yaml
+# /etc/kubernetes/encryption-config.yaml
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+- resources:
+  - secrets
+  providers:
+  - aescbc:
+      keys:
+      - name: key1
+        secret: <base64-encoded-key>
+  - identity: {}
+```
+
+2. **Node-Level Security:**
+- Encrypted disk storage
+- Restricted node SSH access
+- Regular security updates
+
+3. **Future Cloud Auto-Unseal:**
+- Migrate to cloud KMS auto-unseal when scaling
+- AWS KMS, GCP Cloud KMS, Azure Key Vault integration
+- Eliminates need for stored unseal keys
 
 ## Conclusion
 
-This refined 3-repository architecture achieves enterprise-grade zero-secrets-in-Git while maintaining operational simplicity. The separation of concerns provides:
+This phase-based environment variable bootstrap achieves enterprise-grade zero-secrets-in-Git while maintaining maximum operational simplicity for greenfield deployments. The implementation provides:
 
-- **Bootstrap Orchestration**: Single entry point via `infra-management`
-- **Infrastructure Management**: Terraform and Vault configuration via `infra`  
-- **Application Deployment**: Kubernetes manifests and GitOps via `deployments`
+- **Five-Phase Bootstrap**: Proper sequencing eliminates transient error states and ensures reliable deployment
+- **True Zero Secrets**: No secrets in Git repositories or command-line arguments, all secrets cleared from environment post-bootstrap
+- **Complete Secret Flow**: Environment Variables → Terraform → Vault → External Secrets → Kubernetes → Applications (including Flux Git auth)
+- **Self-Referencing Terraform**: Works with or without environment variables for ongoing operations
+- **Enhanced Security**: Vault auto-unsealing with Kubernetes secret storage and comprehensive environment cleanup
+- **Operational Excellence**: Single command deploys entire stack with proper dependency management
 
-The curl|bash bootstrap approach provides maximum ease of use, while External Secrets Operator and Terraform provide scalable, declarative secret management across the distributed repository architecture.
+The phase-based approach eliminates operational complexity while providing enterprise-grade security and reliability. This creates the optimal deployment experience for greenfield zero-secrets infrastructure with proper component dependencies and no legacy migration complexity.

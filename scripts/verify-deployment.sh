@@ -1,13 +1,15 @@
 #!/bin/bash
-# Post-Bootstrap Verification Script
-
 set -e
+
+# Zero-Secrets Phase-Based Deployment Verification Script
+# Comprehensive verification of all phases of the bootstrap process
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 NC='\033[0m' # No Color
 
 log_info() {
@@ -26,365 +28,360 @@ log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
-# Global variables for tracking verification results
-TOTAL_CHECKS=0
-PASSED_CHECKS=0
-FAILED_CHECKS=0
-WARNING_CHECKS=0
+log_phase() {
+    echo -e "${PURPLE}🔍 VERIFICATION PHASE $1: $2${NC}"
+    echo "=================================================="
+}
 
-# Function to run a verification check
-run_check() {
-    local description="$1"
-    local command="$2"
-    local expected_status="${3:-0}"
-    local is_optional="${4:-false}"
+verify_phase1_infrastructure() {
+    log_phase "1" "Core Infrastructure Components"
     
-    TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+    local errors=0
     
-    log_info "Checking: $description"
-    
-    if eval "$command" >/dev/null 2>&1; then
-        local exit_code=$?
-        if [ $exit_code -eq $expected_status ]; then
-            log_success "$description"
-            PASSED_CHECKS=$((PASSED_CHECKS + 1))
-            return 0
-        else
-            if [ "$is_optional" = "true" ]; then
-                log_warning "$description (optional check failed)"
-                WARNING_CHECKS=$((WARNING_CHECKS + 1))
-                return 0
+    # Verify k3s cluster
+    log_info "Checking Kubernetes cluster..."
+    if kubectl cluster-info >/dev/null 2>&1; then
+        log_success "Kubernetes cluster is running"
+        kubectl get nodes --no-headers | while read node status _; do
+            if [[ "$status" == "Ready" ]]; then
+                log_success "Node $node is Ready"
             else
-                log_error "$description (exit code: $exit_code)"
-                FAILED_CHECKS=$((FAILED_CHECKS + 1))
-                return 1
+                log_error "Node $node is not Ready (status: $status)"
+                ((errors++))
             fi
-        fi
+        done
     else
-        if [ "$is_optional" = "true" ]; then
-            log_warning "$description (optional check failed)"
-            WARNING_CHECKS=$((WARNING_CHECKS + 1))
-            return 0
+        log_error "Kubernetes cluster is not accessible"
+        ((errors++))
+    fi
+    
+    # Verify Flux installation
+    log_info "Checking Flux installation..."
+    if flux check >/dev/null 2>&1; then
+        log_success "Flux is installed and healthy"
+    else
+        log_error "Flux installation has issues"
+        ((errors++))
+    fi
+    
+    # Verify Flux components
+    log_info "Checking Flux components..."
+    local flux_components=("source-controller" "kustomize-controller" "helm-controller" "notification-controller")
+    for component in "${flux_components[@]}"; do
+        if kubectl get deployment "$component" -n flux-system >/dev/null 2>&1; then
+            local ready=$(kubectl get deployment "$component" -n flux-system -o jsonpath='{.status.readyReplicas}')
+            local desired=$(kubectl get deployment "$component" -n flux-system -o jsonpath='{.spec.replicas}')
+            if [[ "$ready" == "$desired" && "$ready" -gt 0 ]]; then
+                log_success "Flux $component is ready ($ready/$desired)"
+            else
+                log_error "Flux $component is not ready ($ready/$desired)"
+                ((errors++))
+            fi
         else
-            log_error "$description (command failed)"
-            FAILED_CHECKS=$((FAILED_CHECKS + 1))
-            return 1
+            log_error "Flux $component not found"
+            ((errors++))
         fi
-    fi
-}
-
-# Function to check if pods are running
-check_pods_running() {
-    local namespace="$1"
-    local label_selector="$2"
-    local description="$3"
+    done
     
-    run_check "$description" \
-        "kubectl get pods -n $namespace -l $label_selector --no-headers | awk '{print \$3}' | grep -v Running | wc -l | grep -q '^0$'"
-}
-
-# Function to check service endpoints
-check_service_endpoints() {
-    local namespace="$1" 
-    local service="$2"
-    local description="$3"
-    
-    run_check "$description" \
-        "kubectl get endpoints -n $namespace $service -o jsonpath='{.subsets[0].addresses[0].ip}' | grep -q ."
-}
-
-# Function to check HTTP endpoint
-check_http_endpoint() {
-    local url="$1"
-    local description="$2" 
-    local expected_code="${3:-200}"
-    local is_optional="${4:-false}"
-    
-    run_check "$description" \
-        "curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 '$url' | grep -q '^$expected_code$'" \
-        0 "$is_optional"
-}
-
-# Check Kubernetes cluster health
-check_kubernetes() {
-    echo ""
-    log_info "=== Kubernetes Cluster Health ==="
-    
-    run_check "Kubernetes API server" \
-        "kubectl cluster-info --request-timeout=10s"
-    
-    run_check "All nodes ready" \
-        "kubectl get nodes --no-headers | awk '{print \$2}' | grep -v Ready | wc -l | grep -q '^0$'"
-    
-    run_check "System pods running" \
-        "kubectl get pods -n kube-system --no-headers | awk '{print \$3}' | grep -v Running | grep -v Completed | wc -l | grep -q '^0$'"
-}
-
-# Check Flux GitOps
-check_flux() {
-    echo ""
-    log_info "=== Flux GitOps Status ==="
-    
-    run_check "Flux system pods" \
-        "kubectl get pods -n flux-system --no-headers | awk '{print \$3}' | grep -v Running | wc -l | grep -q '^0$'"
-    
-    run_check "Git repository source" \
-        "flux get sources git deployments --namespace flux-system | grep -q 'True.*Fetched'"
-    
-    run_check "Kustomization ready" \
-        "flux get kustomizations production --namespace flux-system | grep -q 'True.*Applied'"
-    
-    run_check "SOPS decryption working" \
-        "kubectl get secret -n flux-system sops-age" \
-        0 true
-}
-
-# Check Vault
-check_vault() {
-    echo ""
-    log_info "=== HashiCorp Vault Status ==="
-    
-    check_pods_running "vault" "app.kubernetes.io/name=vault" "Vault pods running"
-    
-    check_service_endpoints "vault" "vault" "Vault service endpoints"
-    
-    run_check "Vault unsealed and ready" \
-        "kubectl exec -n vault vault-0 -- vault status | grep -q 'Sealed.*false'"
-    
-    run_check "Kubernetes auth enabled" \
-        "kubectl exec -n vault vault-0 -- vault auth list | grep -q kubernetes"
-    
-    run_check "KV secrets engine enabled" \
-        "kubectl exec -n vault vault-0 -- vault secrets list | grep -q 'secret/'" \
-        0 true
-}
-
-# Check MinIO
-check_minio() {
-    echo ""
-    log_info "=== MinIO Object Storage ==="
-    
-    check_pods_running "minio" "app=minio" "MinIO pods running"
-    
-    check_service_endpoints "minio" "minio" "MinIO service endpoints"
-    
-    check_http_endpoint "http://minio.minio.svc.cluster.local:9000/minio/health/live" \
-        "MinIO health endpoint" 200 true
-}
-
-# Check External Secrets Operator
-check_external_secrets() {
-    echo ""
-    log_info "=== External Secrets Operator ==="
-    
-    run_check "External Secrets Operator installed" \
-        "kubectl get namespace external-secrets-system" \
-        0 true
-    
-    if kubectl get namespace external-secrets-system >/dev/null 2>&1; then
-        check_pods_running "external-secrets-system" "app.kubernetes.io/name=external-secrets" \
-            "External Secrets Operator pods"
+    # Verify Vault
+    log_info "Checking Vault deployment..."
+    if kubectl get pods -n vault -l app.kubernetes.io/name=vault --no-headers 2>/dev/null | grep -q "Running"; then
+        log_success "Vault pod is running"
         
-        run_check "ClusterSecretStore configured" \
-            "kubectl get clustersecretstore vault-backend" \
-            0 true
-        
-        run_check "External secrets syncing" \
-            "kubectl get externalsecrets -A --no-headers | awk '{print \$4}' | grep -v SecretSynced | wc -l | grep -q '^0$'" \
-            0 true
-    else
-        log_warning "External Secrets Operator not deployed (expected for initial bootstrap)"
-        WARNING_CHECKS=$((WARNING_CHECKS + 1))
-        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-    fi
-}
-
-# Check Cloudflared
-check_cloudflared() {
-    echo ""
-    log_info "=== Cloudflared Tunnel ==="
-    
-    run_check "Cloudflared namespace exists" \
-        "kubectl get namespace cloudflared" \
-        0 true
-    
-    if kubectl get namespace cloudflared >/dev/null 2>&1; then
-        check_pods_running "cloudflared" "app=cloudflared" "Cloudflared pods running"
-        
-        run_check "Cloudflared credentials secret" \
-            "kubectl get secret -n cloudflared cloudflared-credentials" \
-            0 true
-        
-        run_check "Cloudflared config" \
-            "kubectl get configmap -n cloudflared cloudflared-config" \
-            0 true
-    else
-        log_warning "Cloudflared not deployed (may not be in initial deployment)"
-        WARNING_CHECKS=$((WARNING_CHECKS + 1))
-        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-    fi
-}
-
-# Check Nginx Ingress
-check_nginx_ingress() {
-    echo ""
-    log_info "=== Nginx Ingress Controller ==="
-    
-    run_check "Ingress nginx namespace" \
-        "kubectl get namespace ingress-nginx" \
-        0 true
-    
-    if kubectl get namespace ingress-nginx >/dev/null 2>&1; then
-        check_pods_running "ingress-nginx" "app.kubernetes.io/component=controller" \
-            "Nginx ingress controller pods"
-        
-        check_service_endpoints "ingress-nginx" "ingress-nginx-controller" \
-            "Nginx ingress service endpoints"
-    else
-        log_warning "Nginx Ingress Controller not deployed"
-        WARNING_CHECKS=$((WARNING_CHECKS + 1))
-        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-    fi
-}
-
-# Check network connectivity
-check_network() {
-    echo ""
-    log_info "=== Network Connectivity ==="
-    
-    run_check "DNS resolution working" \
-        "kubectl exec -n default -c busybox --stdin --tty busybox-test -- nslookup kubernetes.default.svc.cluster.local" \
-        0 true || run_check "Create busybox for testing" \
-        "kubectl run busybox-test --image=busybox --restart=Never -- sleep 3600" \
-        0 true
-    
-    run_check "Internal service communication" \
-        "kubectl exec -n default -c busybox busybox-test -- wget -qO- --timeout=5 http://vault.vault.svc.cluster.local:8200/v1/sys/health" \
-        0 true
-}
-
-# Check persistent volumes
-check_storage() {
-    echo ""
-    log_info "=== Persistent Storage ==="
-    
-    run_check "Persistent volumes available" \
-        "kubectl get pv | grep -q Available" \
-        0 true
-    
-    run_check "Persistent volume claims bound" \
-        "kubectl get pvc -A --no-headers | awk '{print \$3}' | grep -v Bound | wc -l | grep -q '^0$'" \
-        0 true
-    
-    run_check "Storage class available" \
-        "kubectl get storageclass | grep -q local-path" \
-        0 true
-}
-
-# Resource usage check
-check_resources() {
-    echo ""
-    log_info "=== Resource Usage ==="
-    
-    run_check "Node resources available" \
-        "kubectl describe nodes | grep -A5 'Allocated resources' | grep -E '(cpu|memory)' | grep -v '0 ' | wc -l | grep -q ."
-    
-    run_check "No pods in pending state" \
-        "kubectl get pods -A --field-selector=status.phase=Pending --no-headers | wc -l | grep -q '^0$'"
-    
-    run_check "No pods failing" \
-        "kubectl get pods -A --field-selector=status.phase=Failed --no-headers | wc -l | grep -q '^0$'"
-}
-
-# Security checks
-check_security() {
-    echo ""
-    log_info "=== Security Configuration ==="
-    
-    run_check "RBAC enabled" \
-        "kubectl auth can-i create pods --as=system:unauthenticated" \
-        1  # Should fail for unauthenticated user
-    
-    run_check "Network policies exist" \
-        "kubectl get networkpolicies -A" \
-        0 true
-    
-    run_check "Pod security policies" \
-        "kubectl get podsecuritypolicy" \
-        0 true
-}
-
-# Performance and health summary
-generate_summary() {
-    echo ""
-    log_info "=== Deployment Summary ==="
-    
-    echo "Total Checks: $TOTAL_CHECKS"
-    echo "✅ Passed: $PASSED_CHECKS"
-    echo "❌ Failed: $FAILED_CHECKS" 
-    echo "⚠️  Warnings: $WARNING_CHECKS"
-    echo ""
-    
-    if [ $FAILED_CHECKS -eq 0 ]; then
-        if [ $WARNING_CHECKS -eq 0 ]; then
-            log_success "🎉 All verification checks passed! Deployment is healthy."
-            echo ""
-            echo "Your zero-secrets Kubernetes infrastructure is fully operational:"
-            echo "  • GitOps pipeline: kubectl get pods -n flux-system"  
-            echo "  • Secret management: kubectl exec -n vault vault-0 -- vault status"
-            echo "  • Secret synchronization: kubectl get externalsecrets -A"
-            echo "  • Application access: Check your Cloudflare tunnel"
-            return 0
+        # Check Vault status
+        if kubectl exec -n vault vault-0 -- vault status >/dev/null 2>&1; then
+            log_success "Vault is unsealed and ready"
         else
-            log_warning "✅ Core checks passed with $WARNING_CHECKS warnings. Deployment is functional."
-            echo ""
-            echo "Review warnings above - they may indicate optional components not yet deployed."
-            return 0
+            log_error "Vault is not properly unsealed"
+            ((errors++))
         fi
     else
-        log_error "❌ $FAILED_CHECKS critical checks failed. Deployment needs attention."
-        echo ""
-        echo "Common troubleshooting steps:"
-        echo "  • Check pod status: kubectl get pods -A"
-        echo "  • View logs: kubectl logs -n <namespace> <pod-name>"
-        echo "  • Verify Flux: flux get all --all-namespaces"
-        echo "  • Check Vault: kubectl exec -n vault vault-0 -- vault status"
+        log_error "Vault pod is not running"
+        ((errors++))
+    fi
+    
+    # Verify External Secrets Operator
+    log_info "Checking External Secrets Operator..."
+    if kubectl get deployment external-secrets -n external-secrets-system >/dev/null 2>&1; then
+        local ready=$(kubectl get deployment external-secrets -n external-secrets-system -o jsonpath='{.status.readyReplicas}')
+        local desired=$(kubectl get deployment external-secrets -n external-secrets-system -o jsonpath='{.spec.replicas}')
+        if [[ "$ready" == "$desired" && "$ready" -gt 0 ]]; then
+            log_success "External Secrets Operator is ready ($ready/$desired)"
+        else
+            log_error "External Secrets Operator is not ready ($ready/$desired)"
+            ((errors++))
+        fi
+    else
+        log_error "External Secrets Operator not found"
+        ((errors++))
+    fi
+    
+    return $errors
+}
+
+verify_phase2_secrets() {
+    log_phase "2" "Secret Population in Vault"
+    
+    local errors=0
+    
+    # Verify Vault connectivity
+    log_info "Checking Vault secret storage..."
+    kubectl port-forward -n vault svc/vault 8200:8200 >/dev/null 2>&1 &
+    local pf_pid=$!
+    sleep 3
+    
+    export VAULT_ADDR="http://localhost:8200"
+    if kubectl get secret -n vault vault-init-keys >/dev/null 2>&1; then
+        export VAULT_TOKEN="$(kubectl get secret -n vault vault-init-keys -o jsonpath='{.data.VAULT_ROOT_TOKEN}' | base64 -d)"
+    else
+        log_error "Cannot retrieve Vault token"
+        kill $pf_pid 2>/dev/null || true
         return 1
     fi
+    
+    # Check if secrets exist in Vault
+    local expected_secrets=("github/auth" "cloudflare/tunnel")
+    for secret_path in "${expected_secrets[@]}"; do
+        if vault kv get "secret/$secret_path" >/dev/null 2>&1; then
+            log_success "Secret $secret_path exists in Vault"
+        else
+            log_error "Secret $secret_path not found in Vault"
+            ((errors++))
+        fi
+    done
+    
+    # Cleanup port-forward
+    kill $pf_pid 2>/dev/null || true
+    unset VAULT_ADDR VAULT_TOKEN
+    
+    return $errors
 }
 
-# Cleanup test resources
-cleanup() {
-    log_info "Cleaning up test resources"
-    kubectl delete pod busybox-test 2>/dev/null || true
+verify_phase3_flux_auth() {
+    log_phase "3" "Flux External Secrets Authentication"
+    
+    local errors=0
+    
+    # Verify Flux Git auth External Secret exists
+    log_info "Checking Flux Git authentication External Secret..."
+    if kubectl get externalsecret flux-git-auth -n flux-system >/dev/null 2>&1; then
+        local status=$(kubectl get externalsecret flux-git-auth -n flux-system -o jsonpath='{.status.conditions[0].status}')
+        if [[ "$status" == "True" ]]; then
+            log_success "Flux Git auth External Secret is synced"
+        else
+            log_error "Flux Git auth External Secret sync failed"
+            ((errors++))
+        fi
+    else
+        log_error "Flux Git auth External Secret not found"
+        ((errors++))
+    fi
+    
+    # Verify the secret was created
+    log_info "Checking Flux Git authentication secret..."
+    if kubectl get secret flux-git-auth -n flux-system >/dev/null 2>&1; then
+        log_success "Flux Git auth secret exists"
+    else
+        log_error "Flux Git auth secret not found"
+        ((errors++))
+    fi
+    
+    # Verify Flux is using the External Secret
+    log_info "Checking Flux GitRepository configuration..."
+    if kubectl get gitrepository flux-system -n flux-system -o jsonpath='{.spec.secretRef.name}' | grep -q "flux-git-auth"; then
+        log_success "Flux is configured to use External Secret for Git authentication"
+    else
+        log_warning "Flux may not be using External Secret for Git authentication"
+    fi
+    
+    return $errors
 }
 
-# Main verification function
+verify_phase4_applications() {
+    log_phase "4" "Application Deployment and External Secrets"
+    
+    local errors=0
+    
+    # Verify ClusterSecretStore
+    log_info "Checking ClusterSecretStore..."
+    if kubectl get clustersecretstore vault-backend >/dev/null 2>&1; then
+        local status=$(kubectl get clustersecretstore vault-backend -o jsonpath='{.status.conditions[0].status}')
+        if [[ "$status" == "True" ]]; then
+            log_success "ClusterSecretStore vault-backend is ready"
+        else
+            log_error "ClusterSecretStore vault-backend is not ready"
+            ((errors++))
+        fi
+    else
+        log_error "ClusterSecretStore vault-backend not found"
+        ((errors++))
+    fi
+    
+    # Verify External Secrets
+    log_info "Checking External Secrets sync status..."
+    local external_secrets_count=$(kubectl get externalsecrets -A --no-headers 2>/dev/null | wc -l)
+    if [[ $external_secrets_count -gt 0 ]]; then
+        log_success "Found $external_secrets_count External Secret(s)"
+        
+        # Check sync status
+        local synced_count=$(kubectl get externalsecrets -A --no-headers 2>/dev/null | grep -c "True" || echo "0")
+        if [[ $synced_count -eq $external_secrets_count ]]; then
+            log_success "All External Secrets are synced ($synced_count/$external_secrets_count)"
+        else
+            log_warning "Some External Secrets are not synced ($synced_count/$external_secrets_count)"
+        fi
+    else
+        log_warning "No External Secrets found"
+    fi
+    
+    # Verify application pods
+    log_info "Checking application pods..."
+    local app_namespaces=("cloudflared" "ingress-nginx")
+    for namespace in "${app_namespaces[@]}"; do
+        if kubectl get namespace "$namespace" >/dev/null 2>&1; then
+            local pod_count=$(kubectl get pods -n "$namespace" --no-headers 2>/dev/null | wc -l)
+            local running_count=$(kubectl get pods -n "$namespace" --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+            if [[ $pod_count -gt 0 ]]; then
+                if [[ $running_count -eq $pod_count ]]; then
+                    log_success "All pods in $namespace are running ($running_count/$pod_count)"
+                else
+                    log_warning "Some pods in $namespace are not running ($running_count/$pod_count)"
+                fi
+            else
+                log_info "No pods found in $namespace namespace"
+            fi
+        fi
+    done
+    
+    return $errors
+}
+
+verify_phase5_security() {
+    log_phase "5" "Security and Environment Cleanup"
+    
+    local errors=0
+    
+    # Check for secrets in environment
+    log_info "Checking environment for leaked secrets..."
+    local secret_patterns=("token" "secret" "password" "key")
+    local env_secrets=0
+    
+    for pattern in "${secret_patterns[@]}"; do
+        # Exclude known safe environment variables
+        if env | grep -v "^HOME\|^PATH\|^USER\|^KUBECONFIG\|^WORKSPACE\|^PWD\|^OLDPWD\|^SHELL\|^TERM" | grep -qi "$pattern"; then
+            ((env_secrets++))
+        fi
+    done
+    
+    if [[ $env_secrets -eq 0 ]]; then
+        log_success "No secrets found in environment variables"
+    else
+        log_warning "Potential secrets found in environment (review manually)"
+    fi
+    
+    # Verify Vault unseal keys are properly stored
+    log_info "Checking Vault unseal key security..."
+    if kubectl get secret vault-init-keys -n vault >/dev/null 2>&1; then
+        log_success "Vault unseal keys properly stored in Kubernetes secret"
+    else
+        log_error "Vault unseal keys secret not found"
+        ((errors++))
+    fi
+    
+    # Check RBAC for External Secrets
+    log_info "Checking External Secrets RBAC..."
+    if kubectl get clusterrole external-secrets-operator >/dev/null 2>&1; then
+        log_success "External Secrets ClusterRole exists"
+    else
+        log_error "External Secrets ClusterRole not found"
+        ((errors++))
+    fi
+    
+    return $errors
+}
+
+verify_overall_health() {
+    log_phase "OVERALL" "System Health Summary"
+    
+    echo ""
+    echo "🔍 Comprehensive System Status:"
+    echo "================================"
+    
+    # Kubernetes cluster
+    echo ""
+    echo "📊 Cluster Nodes:"
+    kubectl get nodes
+    
+    # Flux status
+    echo ""
+    echo "📊 Flux Status:"
+    flux get all --all-namespaces
+    
+    # Vault status
+    echo ""
+    echo "📊 Vault Status:"
+    kubectl exec -n vault vault-0 -- vault status 2>/dev/null || log_warning "Cannot check Vault status"
+    
+    # External Secrets
+    echo ""
+    echo "📊 External Secrets:"
+    kubectl get externalsecrets -A
+    
+    # All pods status
+    echo ""
+    echo "📊 All Pods Status:"
+    kubectl get pods -A | grep -E "(vault|cloudflared|external-secrets|flux|nginx)" || log_info "No specific application pods found"
+    
+    # Secrets created by External Secrets
+    echo ""
+    echo "📊 Secrets Created by External Secrets:"
+    kubectl get secrets -A | grep -v "kubernetes.io" | grep -v "helm.sh" | grep -v "Opaque.*0" || log_info "No External Secrets synced yet"
+    
+    echo ""
+}
+
 main() {
-    echo "🔍 Post-Bootstrap Deployment Verification"
-    echo "========================================"
+    echo "🔍 Zero-Secrets Phase-Based Deployment Verification"
+    echo "=================================================="
+    echo ""
     
-    # Set trap for cleanup
-    trap cleanup EXIT
+    local total_errors=0
     
-    # Run all verification checks
-    check_kubernetes
-    check_flux
-    check_vault
-    check_minio
-    check_external_secrets
-    check_cloudflared  
-    check_nginx_ingress
-    check_network
-    check_storage
-    check_resources
-    check_security
+    # Run all verification phases
+    verify_phase1_infrastructure
+    ((total_errors += $?))
     
-    # Generate summary
-    generate_summary
+    echo ""
+    verify_phase2_secrets
+    ((total_errors += $?))
+    
+    echo ""
+    verify_phase3_flux_auth
+    ((total_errors += $?))
+    
+    echo ""
+    verify_phase4_applications
+    ((total_errors += $?))
+    
+    echo ""
+    verify_phase5_security
+    ((total_errors += $?))
+    
+    echo ""
+    verify_overall_health
+    
+    # Final result
+    echo ""
+    echo "==============================================="
+    if [[ $total_errors -eq 0 ]]; then
+        log_success "🎉 All verification phases passed! Zero-secrets infrastructure is healthy."
+    else
+        log_warning "⚠️  Verification completed with $total_errors issue(s). Review the output above."
+    fi
+    echo "==============================================="
+    
+    return $total_errors
 }
 
-# Run main function if script is executed directly
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-    main "$@"
-fi
+# Execute main function
+main "$@"

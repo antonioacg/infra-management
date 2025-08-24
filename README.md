@@ -1,26 +1,31 @@
-# Infra Management
+# Zero-Secrets GitOps Infrastructure
 
-Ultra-simple bootstrap orchestrator for zero-secrets Kubernetes infrastructure.
+**5-phase bootstrap** that deploys universal GitOps infrastructure with complete zero-secrets architecture - from Raspberry Pi to enterprise cloud in a single command.
 
-## Quick Start
+## Ultra-Simple Deployment
 
 Deploy a complete zero-secrets Kubernetes cluster from any fresh Ubuntu machine:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | \
-  bash -s \
-  "YOUR_GITHUB_TOKEN" \
-  "YOUR_SOPS_AGE_KEY" \
-  "YOUR_CLOUDFLARE_TUNNEL_TOKEN"
+# Set bootstrap environment variables (cleared automatically after deployment)
+export GITHUB_TOKEN="ghp_your_github_token_here"
+export CLOUDFLARE_TUNNEL_TOKEN="your_cloudflare_tunnel_token_here"
+
+# Single command bootstrap - all 5 phases automatic
+curl -sSL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | bash
 ```
 
-## What This Does
+**Result**: Complete GitOps infrastructure with ALL secrets managed through Vault → External Secrets → Kubernetes. No secrets ever stored in Git.
 
-1. **Installs k3s** - Lightweight Kubernetes cluster
-2. **Deploys GitOps stack** - Flux for continuous deployment from Git
-3. **Initializes Vault** - Centralized secret management with auto-unseal
-4. **Configures External Secrets** - Automatic secret sync from Vault to Kubernetes
-5. **Populates initial secrets** - Via Terraform for declarative management
+## 5-Phase Bootstrap Process
+
+1. **Phase 1: Infrastructure** - k3s, Flux, Vault, External Secrets Operator
+2. **Phase 2: Secret Population** - ALL secrets → Vault via Terraform (including GitHub token)
+3. **Phase 3: Flux Auth Switch** - Flux switches from direct auth to External Secrets  
+4. **Phase 4: Applications** - Apps deploy with External Secrets working automatically
+5. **Phase 5: Cleanup** - Environment variables cleared, zero-secrets achieved
+
+**Duration**: ~5 minutes | **Architecture**: Universal (Raspberry Pi to enterprise cloud)
 
 ## Architecture
 
@@ -32,26 +37,31 @@ This bootstrap script orchestrates three repositories:
 
 ## Prerequisites
 
-- Fresh Ubuntu 20.04+ server with internet access
-- SSH access to the server
-- GitHub token with repository access
-- SOPS Age key for secret encryption
-- Cloudflare tunnel token
+**Hardware:** 
+- Raspberry Pi 4 (4GB+) or Ubuntu 20.04+ server
+- 4GB+ RAM, 32GB+ storage, internet access
 
-## Result
+**Credentials:**
+- GitHub personal access token (`ghp_...`) with repo access
+- Cloudflare tunnel token (from Zero Trust dashboard)
 
-After ~5 minutes, you'll have:
-- ✅ Zero secrets stored in Git repositories
-- ✅ Centralized secret management via Vault
-- ✅ Automatic secret synchronization to Kubernetes
-- ✅ GitOps deployment pipeline with Flux
-- ✅ Secure tunnel access via Cloudflare
+**That's it!** - All tools installed automatically during bootstrap
+
+## Zero-Secrets Achievement
+
+After ~5 minutes, you'll have **true zero-secrets architecture**:
+- ✅ **No secrets in Git repositories** (ever)
+- ✅ **No secrets in environment variables** (cleared automatically)  
+- ✅ **All secrets in Vault** → External Secrets → Kubernetes
+- ✅ **Complete GitOps pipeline** with Flux using External Secrets
+- ✅ **Universal deployment** - same result Pi to cloud
 
 ## Documentation
 
-- [Bootstrap Plan](docs/BOOTSTRAP_PLAN.md) - Comprehensive implementation details
-- [Architecture](docs/ARCHITECTURE.md) - System design and component overview  
-- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
+**Start here:**
+- [QUICKSTART.md](QUICKSTART.md) - 2-minute start for experienced users
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Complete 5-phase architecture
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Phase-specific error handling
 
 ## Verification
 
@@ -78,10 +88,12 @@ For issues or questions:
 - Review component logs: `kubectl logs -n <namespace> <pod-name>`
 - Verify prerequisites and retry bootstrap
 
-## Security
+## Security Model
 
-This bootstrap approach ensures:
-- No secrets committed to Git repositories
-- Encrypted secrets in transit and at rest
-- Minimal credential exposure during bootstrap
-- Automatic cleanup of temporary files
+**Zero-Secrets Architecture:**
+- **Git Repositories**: No secrets ever committed (vs. encrypted SOPS approach)
+- **Environment Variables**: Used only during bootstrap, then cleared automatically
+- **Secret Management**: Vault + External Secrets for all ongoing operations
+- **Flux Authentication**: Switches from bootstrap token to External Secrets automatically
+
+**Infrastructure Independence**: Same security model from development Raspberry Pi to production enterprise cloud.

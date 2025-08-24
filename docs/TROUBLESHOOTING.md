@@ -14,8 +14,9 @@
 sudo apt update && sudo apt install -y curl
 
 # Use alternative download methods
-wget -qO- https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | \
-  bash -s "token" "key" "tunnel_token"
+export GITHUB_TOKEN="ghp_your_token"
+export CLOUDFLARE_TUNNEL_TOKEN="your_tunnel_token"
+wget -qO- https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | bash
 
 # Check internet connectivity
 ping -c 3 8.8.8.8
@@ -64,26 +65,27 @@ curl -H "Authorization: token $GITHUB_TOKEN" -I https://api.github.com/user \
   | grep -i x-oauth-scopes
 ```
 
-### 4. SOPS/Age Configuration Problems
+### 4. Environment Variable Issues
 
 **Symptoms:**
-- `error: failed to decrypt`
-- `no age identity found`
-- SOPS decryption failures
+- `GITHUB_TOKEN not set`
+- `CLOUDFLARE_TUNNEL_TOKEN not set`  
+- Environment variable validation errors
 
 **Solutions:**
 ```bash
-# Verify Age key format
-grep "^AGE-SECRET-KEY-" ~/.config/sops/age/keys.txt
+# Check environment variables are set and valid
+echo $GITHUB_TOKEN | wc -c  # Should be > 40 characters
+echo $CLOUDFLARE_TUNNEL_TOKEN | wc -c  # Should be > 10 characters
 
-# Test SOPS encryption/decryption
-echo "test: secret" | sops --encrypt --age $(grep "^# public key:" ~/.config/sops/age/keys.txt | cut -d' ' -f4) /dev/stdin
+# Validate GitHub token format
+echo $GITHUB_TOKEN | grep -q "^ghp_" && echo "Valid format" || echo "Invalid format"
 
-# Check file permissions
-ls -la ~/.config/sops/age/keys.txt  # Should be 600
+# Re-export if needed
+export GITHUB_TOKEN="ghp_your_actual_token"
+export CLOUDFLARE_TUNNEL_TOKEN="your_actual_tunnel_token"
 
-# Extract public key
-grep '^# public key:' ~/.config/sops/age/keys.txt | cut -d' ' -f4
+# Environment variables are automatically cleared after successful bootstrap
 ```
 
 ### 5. Vault Initialization Issues
@@ -313,8 +315,9 @@ sudo /usr/local/bin/k3s-uninstall.sh
 sudo rm -rf /var/lib/rancher/k3s/*
 
 # 3. Re-run bootstrap
-curl -sSL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | \
-  bash -s "$GITHUB_TOKEN" "$SOPS_AGE_KEY" "$CLOUDFLARE_TUNNEL_TOKEN"
+export GITHUB_TOKEN="ghp_your_token"
+export CLOUDFLARE_TUNNEL_TOKEN="your_tunnel_token"
+curl -sSL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | bash
 ```
 
 ### 14. Partial Component Recovery
