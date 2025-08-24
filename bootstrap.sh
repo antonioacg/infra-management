@@ -187,8 +187,9 @@ deploy_infrastructure_phase() {
     # Create temporary Flux bootstrap with GitHub token
     log_info "Bootstrapping Flux with direct GitHub authentication"
     export GITHUB_TOKEN
-    flux bootstrap git \
-        --url="$DEPLOYMENTS_REPO" \
+    flux bootstrap github \
+        --owner=antonioacg \
+        --repository=deployments \
         --branch=main \
         --path=clusters/production/infrastructure \
         --token-auth
