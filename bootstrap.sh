@@ -206,6 +206,12 @@ deploy_infrastructure_phase() {
     fi
     log_success "Flux controllers installed"
     
+    # Wait for Flux CRDs to be ready before applying our resources
+    log_info "Waiting for Flux CRDs to be ready..."
+    kubectl wait --for condition=established --timeout=60s crd/kustomizations.kustomize.toolkit.fluxcd.io
+    kubectl wait --for condition=established --timeout=60s crd/gitrepositories.source.toolkit.fluxcd.io
+    log_success "Flux CRDs are ready"
+    
     # Apply our existing GitRepository and Kustomization resources
     log_info "Applying GitRepository and Kustomization from deployments repo"
     
