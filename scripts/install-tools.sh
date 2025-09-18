@@ -35,17 +35,25 @@ command_exists() {
 install_package() {
     local package="$1"
     
-    if command_exists apt-get; then
+    if command_exists brew; then
+        # macOS with Homebrew
+        brew install "$package"
+    elif command_exists apt-get; then
+        # Ubuntu/Debian
         sudo apt-get update -qq
         sudo apt-get install -y "$package"
     elif command_exists yum; then
+        # CentOS/RHEL
         sudo yum install -y "$package"
     elif command_exists dnf; then
+        # Fedora
         sudo dnf install -y "$package"
     elif command_exists pacman; then
+        # Arch Linux
         sudo pacman -S --noconfirm "$package"
     else
-        log_error "No supported package manager found"
+        log_error "No supported package manager found (tried: brew, apt-get, yum, dnf, pacman)"
+        log_error "Please install $package manually"
         return 1
     fi
 }
@@ -102,31 +110,7 @@ install_flux() {
     log_success "Flux CLI installed"
 }
 
-# Install SOPS
-install_sops() {
-    if command_exists sops; then
-        log_success "SOPS already installed ($(sops --version 2>/dev/null || echo 'version unknown'))"
-        return 0
-    fi
-    
-    log_info "Installing SOPS"
-    
-    local SOPS_VERSION="${SOPS_VERSION:-v3.8.1}"
-    local ARCH=$(uname -m)
-    
-    case "$ARCH" in
-        x86_64) ARCH="amd64" ;;
-        arm64|aarch64) ARCH="arm64" ;;
-        *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
-    esac
-    
-    # Download and install SOPS
-    curl -LO "https://github.com/mozilla/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.${ARCH}"
-    chmod +x "sops-${SOPS_VERSION}.linux.${ARCH}"
-    sudo mv "sops-${SOPS_VERSION}.linux.${ARCH}" /usr/local/bin/sops
-    
-    log_success "SOPS ${SOPS_VERSION} installed"
-}
+# SOPS removed - using zero-secrets architecture with External Secrets
 
 # Install Terraform
 install_terraform() {
@@ -186,40 +170,13 @@ install_vault_cli() {
     log_success "Vault CLI ${VAULT_VERSION} installed"
 }
 
-# Install Age (for SOPS)
-install_age() {
-    if command_exists age; then
-        log_success "Age already installed ($(age --version 2>/dev/null || echo 'version unknown'))"
-        return 0
-    fi
-    
-    log_info "Installing Age"
-    
-    local AGE_VERSION="${AGE_VERSION:-v1.1.1}"
-    local ARCH=$(uname -m)
-    
-    case "$ARCH" in
-        x86_64) ARCH="amd64" ;;
-        arm64|aarch64) ARCH="arm64" ;;
-        *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
-    esac
-    
-    # Download and install Age
-    local AGE_TAR="age-${AGE_VERSION}-linux-${ARCH}.tar.gz"
-    curl -LO "https://github.com/FiloSottile/age/releases/download/${AGE_VERSION}/${AGE_TAR}"
-    tar -xzf "$AGE_TAR"
-    sudo mv "age/age" /usr/local/bin/
-    sudo mv "age/age-keygen" /usr/local/bin/
-    rm -rf age "$AGE_TAR"
-    
-    log_success "Age ${AGE_VERSION} installed"
-}
+# Age removed - not needed for zero-secrets architecture
 
 # Verify installations
 verify_tools() {
     log_info "Verifying tool installations"
     
-    local tools=("kubectl" "flux" "sops" "terraform" "age" "jq" "curl" "git")
+    local tools=("kubectl" "flux" "terraform" "jq" "curl" "git")
     local failed_tools=()
     
     for tool in "${tools[@]}"; do
@@ -228,9 +185,7 @@ verify_tools() {
             case "$tool" in
                 kubectl) version=$(kubectl version --client --short 2>/dev/null | cut -d' ' -f3 || echo "unknown") ;;
                 flux) version=$(flux version --client 2>/dev/null | grep 'flux version' | cut -d' ' -f3 || echo "unknown") ;;
-                sops) version=$(sops --version 2>/dev/null | cut -d' ' -f2 || echo "unknown") ;;
                 terraform) version=$(terraform version -json 2>/dev/null | jq -r .terraform_version || echo "unknown") ;;
-                age) version=$(age --version 2>/dev/null | cut -d' ' -f2 || echo "unknown") ;;
                 vault) version=$(vault version 2>/dev/null | head -1 | cut -d' ' -f2 || echo "unknown") ;;
                 *) version=$(${tool} --version 2>/dev/null | head -1 || echo "unknown") ;;
             esac
@@ -265,8 +220,6 @@ main() {
     install_system_tools
     install_kubectl
     install_flux  
-    install_sops
-    install_age
     install_terraform
     install_vault_cli  # Optional
     
@@ -278,9 +231,7 @@ main() {
     echo ""
     echo "Installed tools:"
     echo "  • kubectl - Kubernetes CLI"
-    echo "  • flux - GitOps CLI"  
-    echo "  • sops - Secret encryption"
-    echo "  • age - Encryption tool"
+    echo "  • flux - GitOps CLI"
     echo "  • terraform - Infrastructure as code"
     echo "  • vault - Secret management CLI (optional)"
     echo ""
