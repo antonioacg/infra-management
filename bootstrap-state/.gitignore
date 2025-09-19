@@ -1,0 +1,15 @@
+# Bootstrap credentials - never commit
+.minio-credentials
+backend.hcl
+backend-remote.hcl
+terraform-backend.auto.tfvars
+
+# Terraform files
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+
+# Temporary files
+*.tmp
