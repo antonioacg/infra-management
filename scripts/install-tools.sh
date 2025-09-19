@@ -97,10 +97,20 @@ install_kubectl() {
     # Get latest stable version
     KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
 
-    # Download and install kubectl
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS}/${ARCH}/kubectl"
-    chmod +x kubectl
-    sudo mv kubectl /usr/local/bin/
+    # Download and install kubectl with retry logic
+    local KUBECTL_URL="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS}/${ARCH}/kubectl"
+    for attempt in 1 2 3; do
+        log_info "Download attempt $attempt/3..."
+        if curl -L --connect-timeout 30 --max-time 300 -o kubectl "$KUBECTL_URL"; then
+            chmod +x kubectl
+            sudo mv kubectl /usr/local/bin/
+            break
+        else
+            log_warning "Download attempt $attempt failed"
+            [ $attempt -eq 3 ] && { log_error "Failed to download kubectl after 3 attempts"; return 1; }
+            sleep 2
+        fi
+    done
 
     log_success "kubectl ${KUBECTL_VERSION} installed"
 }
@@ -141,13 +151,23 @@ install_terraform() {
         *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
     esac
 
-    # Download and install Terraform
+    # Download and install Terraform with retry logic
     local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${OS}_${ARCH}.zip"
-    curl -LO "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
-    unzip "$TERRAFORM_ZIP"
-    chmod +x terraform
-    sudo mv terraform /usr/local/bin/
-    rm -f "$TERRAFORM_ZIP"
+    local TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
+    for attempt in 1 2 3; do
+        log_info "Download attempt $attempt/3..."
+        if curl -L --connect-timeout 30 --max-time 180 -o "$TERRAFORM_ZIP" "$TERRAFORM_URL"; then
+            unzip "$TERRAFORM_ZIP"
+            chmod +x terraform
+            sudo mv terraform /usr/local/bin/
+            rm -f "$TERRAFORM_ZIP"
+            break
+        else
+            log_warning "Download attempt $attempt failed"
+            [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
+            sleep 2
+        fi
+    done
 
     log_success "Terraform ${TERRAFORM_VERSION} installed"
 }
