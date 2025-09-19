@@ -91,7 +91,7 @@ For issues or questions:
 ## Security Model
 
 **Zero-Secrets Architecture:**
-- **Git Repositories**: No secrets ever committed (vs. encrypted SOPS approach)
+- **Git Repositories**: No secrets ever committed (zero-secrets architecture)
 - **Environment Variables**: Used only during bootstrap, then cleared automatically
 - **Secret Management**: Vault + External Secrets for all ongoing operations
 - **Flux Authentication**: Switches from bootstrap token to External Secrets automatically
