@@ -33,6 +33,10 @@ initialize_terraform_state() {
 
     cd "$BOOTSTRAP_DIR"
 
+    # Generate MinIO credentials
+    ./generate-credentials.sh
+    source ./.minio-credentials
+
     # Initialize with local backend
     terraform init
 
