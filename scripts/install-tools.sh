@@ -130,6 +130,30 @@ install_flux() {
     log_success "Flux CLI installed"
 }
 
+# Install Helm
+install_helm() {
+    if command_exists helm; then
+        log_success "Helm already installed ($(helm version --short 2>/dev/null || echo 'version unknown'))"
+        return 0
+    fi
+
+    log_info "Installing Helm"
+
+    # Install Helm using official script with retry logic
+    for attempt in 1 2 3; do
+        log_info "Download attempt $attempt/3..."
+        if curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; then
+            break
+        else
+            log_warning "Download attempt $attempt failed"
+            [ $attempt -eq 3 ] && { log_error "Failed to install helm after 3 attempts"; return 1; }
+            sleep 2
+        fi
+    done
+
+    log_success "Helm installed"
+}
+
 # SOPS removed - using zero-secrets architecture with External Secrets
 
 # Install Terraform
@@ -208,7 +232,7 @@ install_vault_cli() {
 verify_tools() {
     log_info "Verifying tool installations"
     
-    local tools=("kubectl" "flux" "terraform" "jq" "curl" "git")
+    local tools=("kubectl" "flux" "helm" "terraform" "jq" "curl" "git")
     local failed_tools=()
     
     for tool in "${tools[@]}"; do
@@ -251,7 +275,8 @@ main() {
     # Install tools in order
     install_system_tools
     install_kubectl
-    install_flux  
+    install_helm
+    install_flux
     install_terraform
     install_vault_cli  # Optional
     
