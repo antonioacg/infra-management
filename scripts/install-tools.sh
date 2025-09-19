@@ -81,17 +81,27 @@ install_kubectl() {
         log_success "kubectl already installed ($(kubectl version --client --short 2>/dev/null || echo 'version unknown'))"
         return 0
     fi
-    
+
     log_info "Installing kubectl"
-    
+
+    # Detect OS and architecture
+    local OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local ARCH=$(uname -m)
+
+    case "$ARCH" in
+        x86_64) ARCH="amd64" ;;
+        arm64|aarch64) ARCH="arm64" ;;
+        *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
+    esac
+
     # Get latest stable version
     KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
-    
+
     # Download and install kubectl
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS}/${ARCH}/kubectl"
     chmod +x kubectl
     sudo mv kubectl /usr/local/bin/
-    
+
     log_success "kubectl ${KUBECTL_VERSION} installed"
 }
 
@@ -118,26 +128,27 @@ install_terraform() {
         log_success "Terraform already installed ($(terraform version -json 2>/dev/null | jq -r .terraform_version || echo 'version unknown'))"
         return 0
     fi
-    
+
     log_info "Installing Terraform"
-    
+
     local TERRAFORM_VERSION="${TERRAFORM_VERSION:-1.6.6}"
+    local OS=$(uname -s | tr '[:upper:]' '[:lower:]')
     local ARCH=$(uname -m)
-    
+
     case "$ARCH" in
         x86_64) ARCH="amd64" ;;
         arm64|aarch64) ARCH="arm64" ;;
         *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
     esac
-    
+
     # Download and install Terraform
-    local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip"
+    local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${OS}_${ARCH}.zip"
     curl -LO "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
     unzip "$TERRAFORM_ZIP"
     chmod +x terraform
     sudo mv terraform /usr/local/bin/
     rm -f "$TERRAFORM_ZIP"
-    
+
     log_success "Terraform ${TERRAFORM_VERSION} installed"
 }
 
@@ -149,18 +160,19 @@ install_vault_cli() {
     fi
     
     log_info "Installing Vault CLI"
-    
+
     local VAULT_VERSION="${VAULT_VERSION:-1.15.2}"
+    local OS=$(uname -s | tr '[:upper:]' '[:lower:]')
     local ARCH=$(uname -m)
-    
+
     case "$ARCH" in
         x86_64) ARCH="amd64" ;;
         arm64|aarch64) ARCH="arm64" ;;
         *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
     esac
-    
+
     # Download and install Vault CLI
-    local VAULT_ZIP="vault_${VAULT_VERSION}_linux_${ARCH}.zip"
+    local VAULT_ZIP="vault_${VAULT_VERSION}_${OS}_${ARCH}.zip"
     curl -LO "https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
     unzip "$VAULT_ZIP"
     chmod +x vault
