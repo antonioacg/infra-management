@@ -73,57 +73,37 @@ log_trace() {
 }
 
 # Utility functions for consistent formatting
-print_banner() {
-    local title="$1"
-    local subtitle="$2"
-    local info="$3"
-    local width=$((BANNER_WIDTH - 2))  # Account for border characters
-
-    echo -e "${GREEN}"
-    printf "╔"
-    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
-    printf "╗\n"
-
-    printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#title}) / 2)) "$title")"
-
-    if [[ -n "$subtitle" ]]; then
-        printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#subtitle}) / 2)) "$subtitle")"
-    fi
-
-    if [[ -n "$info" ]]; then
-        printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#info}) / 2)) "$info")"
-    fi
-
-    printf "╚"
-    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
-    printf "╝\n"
-    echo -e "${NC}"
-}
-
-print_success_box() {
+print_box() {
     local title="$1"
     shift
+    local center_title="$1"; shift
+    local divider="$1"; shift
     local lines=("$@")
     local width=$((BANNER_WIDTH - 2))
 
-    echo
     echo -e "${GREEN}"
     printf "╔"
-    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
+    printf "%*s" $width | tr ' ' '═'
     printf "╗\n"
 
-    printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#title}) / 2)) "$title")"
+    if [[ "$center_title" == "true" ]]; then
+        printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#title}) / 2)) "$title")"
+    else
+        printf "║ %-*s║\n" $width "$title"
+    fi
 
-    printf "╠"
-    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
-    printf "╣\n"
+    if [[ "$divider" == "true" ]]; then
+        printf "╠"
+        printf "%*s" $width | tr ' ' '═'
+        printf "╣\n"
+    fi
 
     for line in "${lines[@]}"; do
-        printf "║  %-*s║\n" $((width - 2)) "$line"
+        printf "║ %-*s║\n" $width "$line"
     done
 
     printf "╚"
-    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
+    printf "%*s" $width | tr ' ' '═'
     printf "╝\n"
     echo -e "${NC}"
 }
