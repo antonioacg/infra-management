@@ -5,15 +5,9 @@ set -e
 # Tests ONLY: environment validation, architecture detection, and tool installation
 # Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
 
-# Load central logging library
-if [[ "${DEV_MODE:-false}" == "true" ]]; then
-    # Development mode: use relative path
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    source "${SCRIPT_DIR}/lib/logging.sh"
-else
-    # Production mode: use remote URL
-    source <(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/logging.sh)
-fi
+# Load import utility and logging library
+source <(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)
+import_lib "lib/logging.sh"
 
 # Parse command line arguments for enterprise scaling
 NODE_COUNT=1

@@ -5,25 +5,12 @@ set -e
 # Completely removes all bootstrap components and tools for fresh start
 # Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s [--force]
 
-# Colors for output
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+# Load import utility and logging library
+source <(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)
+import_lib "lib/logging.sh"
 
-log_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
-log_success() { echo -e "${GREEN}✅ $1${NC}"; }
-log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
-log_error() { echo -e "${RED}❌ $1${NC}"; }
-
-print_banner() {
-    echo -e "${RED}"
-    echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║              🧹 Enterprise Homelab Cleanup                ║"
-    echo "║              ⚠️  DESTRUCTIVE OPERATION                     ║"
-    echo "╚════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
+cleanup_banner() {
+    print_banner "🧹 Enterprise Homelab Cleanup" "⚠️  DESTRUCTIVE OPERATION"
 }
 
 confirm_cleanup() {
@@ -167,21 +154,11 @@ verify_cleanup() {
 
 print_success() {
     echo
-    echo -e "${GREEN}"
-    echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║                  🎉 CLEANUP COMPLETE!                     ║"
-    echo "╠════════════════════════════════════════════════════════════╣"
-    echo "║  Your system is now ready for a fresh bootstrap           ║"
-    echo "║                                                            ║"
-    echo "║  Next steps:                                               ║"
-    echo "║  • Run bootstrap script for fresh deployment              ║"
-    echo "║  • Verify no unexpected processes are running             ║"
-    echo "╚════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
+    print_banner "🎉 CLEANUP COMPLETE!" "Your system is now ready for a fresh bootstrap" "Next steps: Run bootstrap script for fresh deployment"
 }
 
 main() {
-    print_banner
+    cleanup_banner
 
     # Skip confirmation if --force flag is provided
     if [[ "$1" != "--force" ]]; then
