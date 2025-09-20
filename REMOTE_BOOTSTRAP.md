@@ -9,7 +9,7 @@ Deploy a complete enterprise-grade Kubernetes platform with a single command fro
 ### One-Command Deployment
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s homelab
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
 ```
 
 That's it! This single command will:
@@ -21,14 +21,19 @@ That's it! This single command will:
 
 ## 🎯 Enterprise Scaling
 
-### Homelab Deployment (Single Node)
+### Single Node Deployment (Default)
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s homelab
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
 ```
 
-### Business Deployment (Multi-Node)
+### Multi-Node Production Deployment
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s business
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=3 --tier=medium
+```
+
+### Enterprise Scale Deployment
+```bash
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=10 --tier=large
 ```
 
 ## 📋 Prerequisites
@@ -61,7 +66,7 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/rem
 chmod +x bootstrap.sh
 
 # Execute with custom environment
-GITHUB_TOKEN="ghp_xxx" ./bootstrap.sh homelab
+GITHUB_TOKEN="ghp_xxx" ./bootstrap.sh --nodes=1 --tier=small
 ```
 
 ### Custom Workspace Directory
@@ -106,7 +111,7 @@ Platform Services
 - **Secret Management**: HashiCorp Vault with auto-initialization
 - **GitOps**: Flux CD for application deployment
 - **Networking**: Nginx Ingress Controller
-- **Scaling**: Environment-based scaling (homelab → business)
+- **Scaling**: Resource-based scaling (1 node → enterprise)
 
 ## 🔍 Verification
 
@@ -181,7 +186,7 @@ find $HOME/homelab-bootstrap -name "*.log" -type f
 
 # Manual retry
 cd $HOME/homelab-bootstrap/infra-management
-GITHUB_TOKEN="ghp_xxx" ./scripts/bootstrap.sh homelab
+GITHUB_TOKEN="ghp_xxx" ./scripts/bootstrap.sh --nodes=1 --tier=small
 
 # Clean retry (start over)
 rm -rf $HOME/homelab-bootstrap
@@ -224,7 +229,7 @@ kubectl port-forward -n vault svc/vault 8200:8200
 
 ### Scale Infrastructure
 ```bash
-# Add more nodes (business environment)
+# Add more nodes (enterprise scaling)
 # Update terraform.tfvars and run terraform apply
 ```
 

@@ -7,7 +7,7 @@ set -e
 
 # Load import utility and logging library
 source <(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)
-import_lib "lib/logging.sh"
+smart_import "infra-management/scripts/lib/logging.sh"
 
 cleanup_banner() {
     print_banner "🧹 Enterprise Homelab Cleanup" "⚠️  DESTRUCTIVE OPERATION"

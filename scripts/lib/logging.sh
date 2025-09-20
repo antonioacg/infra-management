@@ -38,7 +38,7 @@ _get_timestamp() {
     fi
 }
 
-# Core logging functions (no emojis - clients decide)
+# Core logging functions (clean, no emojis)
 log_info() {
     echo -e "$(_get_timestamp)${BLUE}$1${NC}"
 }
