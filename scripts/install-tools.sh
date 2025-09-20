@@ -3,28 +3,9 @@
 
 # Remove set -e to prevent silent exits - we want to see errors
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-log_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
-}
-
-log_success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
-
-log_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-log_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
+# Load import utility and logging library (bash 3.2+ compatible)
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+smart_import "infra-management/scripts/lib/logging.sh"
 
 # Function to check if a command exists
 command_exists() {
@@ -94,8 +75,12 @@ install_kubectl() {
         *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
     esac
 
-    # Get latest stable version
+    # Get latest stable version with error handling
     KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+    if [[ -z "$KUBECTL_VERSION" ]]; then
+        log_error "Failed to fetch kubectl version"
+        return 1
+    fi
 
     # Download and install kubectl with retry logic
     local KUBECTL_URL="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS}/${ARCH}/kubectl"
@@ -103,6 +88,7 @@ install_kubectl() {
 
     for attempt in 1 2 3; do
         log_info "Download attempt $attempt/3..."
+        log_info "Downloading from: $KUBECTL_URL"
         if curl -L --connect-timeout 30 --max-time 300 -o kubectl "$KUBECTL_URL" -w "HTTP Status: %{http_code}, Download size: %{size_download} bytes\n"; then
             if [[ -f kubectl && -s kubectl ]]; then
                 chmod +x kubectl
@@ -136,11 +122,16 @@ install_flux() {
     fi
     
     log_info "Installing Flux CLI"
+
+    # Install Flux using official script with error handling
+    log_info "Downloading Flux installation script..."
+    if curl -s https://fluxcd.io/install.sh | sudo bash; then
+        log_success "Flux CLI installed successfully"
+    else
+        log_error "Failed to install Flux CLI - check network connectivity and permissions"
+        return 1
+    fi
     
-    # Install Flux using official script
-    curl -s https://fluxcd.io/install.sh | sudo bash
-    
-    log_success "Flux CLI installed"
 }
 
 # Install Helm
@@ -155,6 +146,7 @@ install_helm() {
     # Install Helm using official script with retry logic
     for attempt in 1 2 3; do
         log_info "Download attempt $attempt/3..."
+        log_info "Downloading Helm installation script..."
         if curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; then
             break
         else
@@ -195,6 +187,7 @@ install_terraform() {
 
     for attempt in 1 2 3; do
         log_info "Download attempt $attempt/3..."
+        log_info "Downloading from: $TERRAFORM_URL"
         if curl -L --connect-timeout 30 --max-time 180 -o "$TERRAFORM_ZIP" "$TERRAFORM_URL" -w "HTTP Status: %{http_code}, Download size: %{size_download} bytes\n"; then
             if [[ -f "$TERRAFORM_ZIP" && -s "$TERRAFORM_ZIP" ]]; then
                 if unzip "$TERRAFORM_ZIP"; then
@@ -300,9 +293,7 @@ verify_tools() {
 
 # Main installation function
 main() {
-    echo "🔧 Bootstrap Tool Installation Script"
-    echo "===================================="
-    echo ""
+    print_banner "🔧 Bootstrap Tool Installation" "Installing enterprise platform tools"
     
     # Check if running as root (some tools need sudo)
     if [ "$EUID" -eq 0 ]; then
@@ -321,15 +312,14 @@ main() {
     verify_tools
     
     echo ""
-    log_success "🎉 Tool installation completed!"
+    log_success "Tool installation completed!"
     echo ""
-    echo "Installed tools:"
-    echo "  • kubectl - Kubernetes CLI"
-    echo "  • flux - GitOps CLI"
-    echo "  • terraform - Infrastructure as code"
-    echo "  • vault - Secret management CLI (optional)"
+    log_info "Installed tools:"
+    log_info "  • kubectl - Kubernetes CLI"
+    log_info "  • flux - GitOps CLI"
+    log_info "  • terraform - Infrastructure as code"
+    log_info "  • vault - Secret management CLI (optional)"
     echo ""
-    echo "You can now run the bootstrap script!"
 }
 
 # Run main function if script is executed directly
