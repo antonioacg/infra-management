@@ -5,8 +5,8 @@ set -e
 # Completely removes all bootstrap components and tools for fresh start
 # Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s [--force]
 
-# Load import utility and logging library
-source <(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)
+# Load import utility and logging library (bash 3.2+ compatible)
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
 
 cleanup_banner() {

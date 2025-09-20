@@ -5,8 +5,8 @@ set -e
 # Tests ONLY: environment validation, architecture detection, and tool installation
 # Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
 
-# Load import utility and logging library
-source <(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)
+# Load import utility and logging library (bash 3.2+ compatible)
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
 
 # Parse command line arguments for enterprise scaling
