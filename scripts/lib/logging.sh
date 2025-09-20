@@ -19,7 +19,36 @@ NC='\033[0m' # No Color
 # Configuration (can be overridden by scripts)
 LOG_LEVEL=${LOG_LEVEL:-INFO}
 LOG_TIMESTAMPS=${LOG_TIMESTAMPS:-false}
-BANNER_WIDTH=${BANNER_WIDTH:-120}
+
+# Dynamic banner width detection
+get_banner_width() {
+    local max_width=120
+    local min_width=60
+    local terminal_width
+
+    # Try multiple methods to get terminal width
+    if [[ -n "${COLUMNS:-}" ]]; then
+        terminal_width=$COLUMNS
+    elif command -v tput >/dev/null 2>&1; then
+        terminal_width=$(tput cols 2>/dev/null || echo "80")
+    elif [[ -n "${TERM:-}" ]] && command -v stty >/dev/null 2>&1; then
+        terminal_width=$(stty size 2>/dev/null | cut -d' ' -f2 || echo "80")
+    else
+        terminal_width=80
+    fi
+
+    local available_width=$((terminal_width - 4))  # Leave some margin
+
+    if [[ $available_width -lt $min_width ]]; then
+        echo $min_width
+    elif [[ $available_width -gt $max_width ]]; then
+        echo $max_width
+    else
+        echo $available_width
+    fi
+}
+
+BANNER_WIDTH=${BANNER_WIDTH:-$(get_banner_width)}
 
 # Internal function to get timestamp if enabled
 _get_timestamp() {
@@ -84,14 +113,18 @@ print_banner() {
     printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
     printf "╗\n"
 
-    printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#title}) / 2)) "$title")"
+    # Center the title
+    local title_padding=$(((width - ${#title}) / 2))
+    printf "║%*s%s%*s║\n" $title_padding "" "$title" $((width - title_padding - ${#title})) ""
 
     if [[ -n "$subtitle" ]]; then
-        printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#subtitle}) / 2)) "$subtitle")"
+        local subtitle_padding=$(((width - ${#subtitle}) / 2))
+        printf "║%*s%s%*s║\n" $subtitle_padding "" "$subtitle" $((width - subtitle_padding - ${#subtitle})) ""
     fi
 
     if [[ -n "$info" ]]; then
-        printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#info}) / 2)) "$info")"
+        local info_padding=$(((width - ${#info}) / 2))
+        printf "║%*s%s%*s║\n" $info_padding "" "$info" $((width - info_padding - ${#info})) ""
     fi
 
     printf "╚"
