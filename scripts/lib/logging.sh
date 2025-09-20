@@ -73,37 +73,29 @@ log_trace() {
 }
 
 # Utility functions for consistent formatting
-print_box() {
+print_banner() {
     local title="$1"
-    shift
-    local center_title="$1"; shift
-    local divider="$1"; shift
-    local lines=("$@")
-    local width=$((BANNER_WIDTH - 2))
+    local subtitle="$2"
+    local info="$3"
+    local width=$((BANNER_WIDTH - 2))  # Account for border characters
 
     echo -e "${GREEN}"
     printf "╔"
-    printf "%*s" $width | tr ' ' '═'
+    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
     printf "╗\n"
 
-    if [[ "$center_title" == "true" ]]; then
-        printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#title}) / 2)) "$title")"
-    else
-        printf "║ %-*s║\n" $width "$title"
+    printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#title}) / 2)) "$title")"
+
+    if [[ -n "$subtitle" ]]; then
+        printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#subtitle}) / 2)) "$subtitle")"
     fi
 
-    if [[ "$divider" == "true" ]]; then
-        printf "╠"
-        printf "%*s" $width | tr ' ' '═'
-        printf "╣\n"
+    if [[ -n "$info" ]]; then
+        printf "║%*s║\n" $width "$(printf "%*s" $(((width + ${#info}) / 2)) "$info")"
     fi
-
-    for line in "${lines[@]}"; do
-        printf "║ %-*s║\n" $width "$line"
-    done
 
     printf "╚"
-    printf "%*s" $width | tr ' ' '═'
+    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
     printf "╝\n"
     echo -e "${NC}"
 }
