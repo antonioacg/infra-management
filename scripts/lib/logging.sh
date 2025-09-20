@@ -135,18 +135,34 @@ print_banner() {
     printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
     printf "╗\n"
 
+    # Estimate display width (accounts for common emojis)
+    _get_display_width() {
+        local text="$1"
+        local char_count=${#text}
+
+        # Count emoji-like characters (rough heuristic)
+        local emoji_count=$(echo -n "$text" | grep -o '[🎯🔧🚀✅❌⚠️ℹ️🧹🎉📋📁🛠️🔍💡📚🏗️🔄]' | wc -l 2>/dev/null || echo 0)
+
+        # Assume most emojis take 2 display columns but count as 1 character
+        # So add 1 extra for each emoji to get approximate display width
+        echo $((char_count + emoji_count))
+    }
+
     # Center the title
-    local title_padding=$(((width - ${#title}) / 2))
-    printf "║%*s%s%*s║\n" $title_padding "" "$title" $((width - title_padding - ${#title})) ""
+    local title_display_width=$(_get_display_width "$title")
+    local title_padding=$(((width - title_display_width) / 2))
+    printf "║%*s%s%*s║\n" $title_padding "" "$title" $((width - title_padding - title_display_width)) ""
 
     if [[ -n "$subtitle" ]]; then
-        local subtitle_padding=$(((width - ${#subtitle}) / 2))
-        printf "║%*s%s%*s║\n" $subtitle_padding "" "$subtitle" $((width - subtitle_padding - ${#subtitle})) ""
+        local subtitle_display_width=$(_get_display_width "$subtitle")
+        local subtitle_padding=$(((width - subtitle_display_width) / 2))
+        printf "║%*s%s%*s║\n" $subtitle_padding "" "$subtitle" $((width - subtitle_padding - subtitle_display_width)) ""
     fi
 
     if [[ -n "$info" ]]; then
-        local info_padding=$(((width - ${#info}) / 2))
-        printf "║%*s%s%*s║\n" $info_padding "" "$info" $((width - info_padding - ${#info})) ""
+        local info_display_width=$(_get_display_width "$info")
+        local info_padding=$(((width - info_display_width) / 2))
+        printf "║%*s%s%*s║\n" $info_padding "" "$info" $((width - info_padding - info_display_width)) ""
     fi
 
     printf "╚"
