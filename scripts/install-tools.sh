@@ -1,7 +1,7 @@
 #!/bin/bash
 # Tool Installation Helper for Bootstrap Process
 
-set -e
+# Remove set -e to prevent silent exits - we want to see errors
 
 # Colors for output
 RED='\033[0;31m'
@@ -99,12 +99,25 @@ install_kubectl() {
 
     # Download and install kubectl with retry logic
     local KUBECTL_URL="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS}/${ARCH}/kubectl"
+    log_info "kubectl download URL: $KUBECTL_URL"
+
     for attempt in 1 2 3; do
         log_info "Download attempt $attempt/3..."
-        if curl -L --connect-timeout 30 --max-time 300 -o kubectl "$KUBECTL_URL"; then
-            chmod +x kubectl
-            sudo mv kubectl /usr/local/bin/
-            break
+        if curl -L --connect-timeout 30 --max-time 300 -o kubectl "$KUBECTL_URL" -w "HTTP Status: %{http_code}, Download size: %{size_download} bytes\n"; then
+            if [[ -f kubectl && -s kubectl ]]; then
+                chmod +x kubectl
+                if sudo mv kubectl /usr/local/bin/; then
+                    log_success "kubectl successfully installed to /usr/local/bin/"
+                    break
+                else
+                    log_error "Failed to move kubectl to /usr/local/bin/"
+                    return 1
+                fi
+            else
+                log_error "Downloaded kubectl file is empty or missing"
+                rm -f kubectl
+                [ $attempt -eq 3 ] && { log_error "Failed to download kubectl after 3 attempts"; return 1; }
+            fi
         else
             log_warning "Download attempt $attempt failed"
             [ $attempt -eq 3 ] && { log_error "Failed to download kubectl after 3 attempts"; return 1; }
@@ -178,14 +191,38 @@ install_terraform() {
     # Download and install Terraform with retry logic
     local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${OS}_${ARCH}.zip"
     local TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
+    log_info "terraform download URL: $TERRAFORM_URL"
+
     for attempt in 1 2 3; do
         log_info "Download attempt $attempt/3..."
-        if curl -L --connect-timeout 30 --max-time 180 -o "$TERRAFORM_ZIP" "$TERRAFORM_URL"; then
-            unzip "$TERRAFORM_ZIP"
-            chmod +x terraform
-            sudo mv terraform /usr/local/bin/
-            rm -f "$TERRAFORM_ZIP"
-            break
+        if curl -L --connect-timeout 30 --max-time 180 -o "$TERRAFORM_ZIP" "$TERRAFORM_URL" -w "HTTP Status: %{http_code}, Download size: %{size_download} bytes\n"; then
+            if [[ -f "$TERRAFORM_ZIP" && -s "$TERRAFORM_ZIP" ]]; then
+                if unzip "$TERRAFORM_ZIP"; then
+                    if [[ -f terraform && -s terraform ]]; then
+                        chmod +x terraform
+                        if sudo mv terraform /usr/local/bin/; then
+                            log_success "terraform successfully installed to /usr/local/bin/"
+                            rm -f "$TERRAFORM_ZIP"
+                            break
+                        else
+                            log_error "Failed to move terraform to /usr/local/bin/"
+                            return 1
+                        fi
+                    else
+                        log_error "Extracted terraform binary is empty or missing"
+                        rm -f terraform "$TERRAFORM_ZIP"
+                        [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
+                    fi
+                else
+                    log_error "Failed to unzip $TERRAFORM_ZIP"
+                    rm -f "$TERRAFORM_ZIP"
+                    [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
+                fi
+            else
+                log_error "Downloaded terraform zip file is empty or missing"
+                rm -f "$TERRAFORM_ZIP"
+                [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
+            fi
         else
             log_warning "Download attempt $attempt failed"
             [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
