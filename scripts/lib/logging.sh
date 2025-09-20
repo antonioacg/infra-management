@@ -14,6 +14,7 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
+GRAY='\033[0;90m'
 NC='\033[0m' # No Color
 
 # Configuration (can be overridden by scripts)
@@ -67,37 +68,58 @@ _get_timestamp() {
     fi
 }
 
-# Core logging functions (clean, no emojis)
-log_info() {
-    echo -e "$(_get_timestamp)${BLUE}$1${NC}"
+# Core logging functions moved to hierarchical section below
+
+# Log level hierarchy (higher numbers = more verbose)
+_get_log_level_number() {
+    case "${LOG_LEVEL:-INFO}" in
+        ERROR) echo 1 ;;
+        WARN)  echo 2 ;;
+        INFO)  echo 3 ;;
+        DEBUG) echo 4 ;;
+        TRACE) echo 5 ;;
+        *) echo 3 ;;  # Default to INFO
+    esac
 }
 
-log_success() {
-    echo -e "$(_get_timestamp)${GREEN}$1${NC}"
-}
-
-log_warning() {
-    echo -e "$(_get_timestamp)${YELLOW}$1${NC}"
-}
-
+# Enhanced logging functions with hierarchical levels
 log_error() {
     echo -e "$(_get_timestamp)${RED}$1${NC}" >&2
 }
 
-log_phase() {
-    echo -e "$(_get_timestamp)${CYAN}$1${NC}"
+log_warning() {
+    if [[ $(_get_log_level_number) -ge 2 ]]; then
+        echo -e "$(_get_timestamp)${YELLOW}$1${NC}"
+    fi
 }
 
-# Enhanced logging functions with levels
+log_info() {
+    if [[ $(_get_log_level_number) -ge 3 ]]; then
+        echo -e "$(_get_timestamp)${BLUE}$1${NC}"
+    fi
+}
+
+log_success() {
+    if [[ $(_get_log_level_number) -ge 3 ]]; then
+        echo -e "$(_get_timestamp)${GREEN}$1${NC}"
+    fi
+}
+
+log_phase() {
+    if [[ $(_get_log_level_number) -ge 3 ]]; then
+        echo -e "$(_get_timestamp)${CYAN}$1${NC}"
+    fi
+}
+
 log_debug() {
-    if [[ "$LOG_LEVEL" == "DEBUG" ]]; then
-        echo -e "$(_get_timestamp)${CYAN}DEBUG: $1${NC}" >&2
+    if [[ $(_get_log_level_number) -ge 4 ]]; then
+        echo -e "$(_get_timestamp)${CYAN}DEBUG: $1${NC}"
     fi
 }
 
 log_trace() {
-    if [[ "$LOG_LEVEL" == "TRACE" ]]; then
-        echo -e "$(_get_timestamp)${CYAN}TRACE: $1${NC}" >&2
+    if [[ $(_get_log_level_number) -ge 5 ]]; then
+        echo -e "$(_get_timestamp)${GRAY}TRACE: $1${NC}"
     fi
 }
 
@@ -178,5 +200,5 @@ set_timestamps() {
     esac
 }
 
-# Library initialization message
-log_debug "Enterprise Platform Logging Library loaded (Level: $LOG_LEVEL, Timestamps: $LOG_TIMESTAMPS)"
+# Library initialization message (trace level, shows first when TRACE enabled)
+log_trace "Enterprise Platform Logging Library loaded (Level: $LOG_LEVEL, Timestamps: $LOG_TIMESTAMPS)"
