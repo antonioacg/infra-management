@@ -36,16 +36,10 @@ smart_import() {
     local repo_name="${lib_path%%/*}"
 
     if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
-        # Local development: use filesystem relative to repo root
+        # Local development: resolve relative to calling script location
         local script_dir="$(get_script_dir)"
+        local local_path="${script_dir}/../${lib_path}"
 
-        # Walk up to find git repo root
-        local repo_root="$script_dir"
-        while [[ "$repo_root" != "/" && ! -d "$repo_root/.git" ]]; do
-            repo_root="$(dirname "$repo_root")"
-        done
-
-        local local_path="${repo_root}/${lib_path}"
         [[ "${DEBUG_IMPORTS:-false}" == "true" ]] && echo "DEBUG: Importing local: $local_path" >&2
         source "$local_path"
     else
