@@ -15,13 +15,6 @@ else
     source <(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/logging.sh)
 fi
 
-# Client-specific logging functions (with emojis)
-log_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
-log_success() { echo -e "${GREEN}✅ $1${NC}"; }
-log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
-log_error() { echo -e "${RED}❌ $1${NC}"; }
-log_phase() { echo -e "${CYAN}🚀 $1${NC}"; }
-
 # Parse command line arguments for enterprise scaling
 NODE_COUNT=1
 RESOURCE_TIER="small"
@@ -49,50 +42,50 @@ GITHUB_ORG="antonioacg"
 
 
 validate_environment() {
-    log_info "Validating environment and prerequisites..."
+    log_info "[Phase 0a] Validating environment and prerequisites..."
 
     # Check GitHub token (allow "test" for Phase 0 testing)
     if [[ -z "$GITHUB_TOKEN" ]]; then
-        log_error "GITHUB_TOKEN environment variable required"
-        echo
-        echo "Usage:"
-        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap-phase0.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
-        echo
-        echo "Parameters:"
-        echo "  --nodes=N     Number of nodes (default: 1)"
-        echo "  --tier=SIZE   Resource tier: small|medium|large (default: small)"
-        echo
-        echo "Note: Use GITHUB_TOKEN=\"test\" for Phase 0 testing"
+        log_error "[Phase 0a] ❌ GITHUB_TOKEN environment variable required"
+        log_info ""
+        log_info "Usage:"
+        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap-phase0.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
+        log_info ""
+        log_info "Parameters:"
+        log_info "  --nodes=N     Number of nodes (default: 1)"
+        log_info "  --tier=SIZE   Resource tier: small|medium|large (default: small)"
+        log_info ""
+        log_info "Note: Use GITHUB_TOKEN=\"test\" for Phase 0 testing"
         exit 1
     fi
 
     # Validate resource parameters
     if [[ ! "$RESOURCE_TIER" =~ ^(small|medium|large)$ ]]; then
-        log_error "Resource tier must be 'small', 'medium', or 'large'"
+        log_error "[Phase 0a] Resource tier must be 'small', 'medium', or 'large'"
         exit 1
     fi
 
     if [[ ! "$NODE_COUNT" =~ ^[0-9]+$ ]] || [[ "$NODE_COUNT" -lt 1 ]]; then
-        log_error "Node count must be a positive integer"
+        log_error "[Phase 0a] Node count must be a positive integer"
         exit 1
     fi
 
     # Check basic system requirements
     if ! command -v curl >/dev/null 2>&1; then
-        log_error "curl is required but not installed"
+        log_error "[Phase 0a] curl is required but not installed"
         exit 1
     fi
 
     if ! command -v git >/dev/null 2>&1; then
-        log_error "git is required but not installed"
+        log_error "[Phase 0a] git is required but not installed"
         exit 1
     fi
 
-    log_success "Resources validated: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier (Phase 0 mode)"
+    log_success "[Phase 0a] ✅ Resources validated: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier (Phase 0 mode)"
 }
 
 detect_architecture() {
-    log_info "Detecting system architecture..."
+    log_info "[Phase 0a] Detecting system architecture..."
 
     local arch=$(uname -m)
     local os=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -101,7 +94,7 @@ detect_architecture() {
         x86_64) ARCH="amd64" ;;
         arm64|aarch64) ARCH="arm64" ;;
         *)
-            log_error "Unsupported architecture: $arch"
+            log_error "[Phase 0a] Unsupported architecture: $arch"
             exit 1
             ;;
     esac
@@ -110,33 +103,33 @@ detect_architecture() {
         linux) OS="linux" ;;
         darwin) OS="darwin" ;;
         *)
-            log_error "Unsupported operating system: $os"
+            log_error "[Phase 0a] Unsupported operating system: $os"
             exit 1
             ;;
     esac
 
-    log_success "Detected: $OS/$ARCH"
+    log_success "[Phase 0a] ✅ Detected: $OS/$ARCH"
     export DETECTED_ARCH="$ARCH"
     export DETECTED_OS="$OS"
 }
 
 install_tools() {
-    log_info "Installing required tools remotely..."
+    log_info "[Phase 0b] Installing required tools remotely..."
 
     # Execute tool installation script directly via curl pipe
     local install_script_url="https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/install-tools.sh"
 
-    log_info "Executing tool installation script remotely..."
+    log_info "[Phase 0b] Executing tool installation script remotely..."
     if curl -sfL "$install_script_url" | bash; then
-        log_success "Tools installed successfully"
+        log_success "[Phase 0b] ✅ Tools installed successfully"
     else
-        log_error "Failed to execute tool installation script from: $install_script_url"
+        log_error "[Phase 0b] Failed to execute tool installation script from: $install_script_url"
         exit 1
     fi
 }
 
 verify_prerequisites() {
-    log_info "Verifying all prerequisites..."
+    log_info "[Phase 0b] Verifying all prerequisites..."
 
     local required_tools=("kubectl" "terraform" "helm" "flux" "jq")
     local missing_tools=()
@@ -150,23 +143,23 @@ verify_prerequisites() {
                 flux) version=$(flux version --client 2>/dev/null | grep 'flux version' | cut -d' ' -f3 || echo "unknown") ;;
                 *) version=$(${tool} --version 2>/dev/null | head -1 || echo "unknown") ;;
             esac
-            log_success "  ✅ $tool available (${version})"
+            log_success "[Phase 0b]   ✅ $tool available (${version})"
         else
-            log_error "  ❌ $tool missing"
+            log_error "[Phase 0b]   ❌ $tool missing"
             missing_tools+=("$tool")
         fi
     done
 
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        log_error "Missing required tools: ${missing_tools[*]}"
+        log_error "[Phase 0b] Missing required tools: ${missing_tools[*]}"
         exit 1
     fi
 
-    log_success "All prerequisites verified"
+    log_success "[Phase 0b] ✅ All prerequisites verified"
 }
 
 configure_environment() {
-    log_info "Configuring environment variables..."
+    log_info "[Phase 0c] Configuring environment variables..."
 
     # Export required environment variables
     export GITHUB_TOKEN="$GITHUB_TOKEN"
@@ -176,7 +169,7 @@ configure_environment() {
     export NODE_COUNT="$NODE_COUNT"
     export RESOURCE_TIER="$RESOURCE_TIER"
 
-    log_success "Environment configured"
+    log_success "[Phase 0c] ✅ Environment configured"
 }
 
 cleanup_on_error() {
@@ -184,19 +177,19 @@ cleanup_on_error() {
     local line_number=$1
 
     if [[ $exit_code -ne 0 ]]; then
-        echo
-        log_error "Phase 0 testing failed at line $line_number with exit code $exit_code"
-        echo
-        echo "Debugging information:"
-        echo "  • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
-        echo "  • Architecture: ${DETECTED_OS:-unknown}/${DETECTED_ARCH:-unknown}"
-        echo "  • Failed phase: $(get_current_phase)"
-        echo
-        echo "Recovery options:"
-        echo "  1. Check logs above for specific error details"
-        echo "  2. Run cleanup: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/cleanup.sh | bash -s --force"
-        echo "  3. Retry Phase 0: curl ... (run this script again)"
-        echo
+        log_info ""
+        log_error "[Phase 0] ❌ Testing failed at line $line_number with exit code $exit_code"
+        log_info ""
+        log_info "🔍 Debugging information:"
+        log_info "  • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
+        log_info "  • Architecture: ${DETECTED_OS:-unknown}/${DETECTED_ARCH:-unknown}"
+        log_info "  • Failed phase: $(get_current_phase)"
+        log_info ""
+        log_info "🔧 Recovery options:"
+        log_info "  1. Check logs above for specific error details"
+        log_info "  2. Run cleanup: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/cleanup.sh | bash -s --force"
+        log_info "  3. Retry Phase 0: curl ... (run this script again)"
+        log_info ""
         exit $exit_code
     fi
 }
@@ -212,59 +205,48 @@ get_current_phase() {
 }
 
 print_success_message() {
-    echo
-    echo -e "${GREEN}"
-    echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║                🎉 PHASE 0 TESTING COMPLETE!               ║"
-    echo "╠════════════════════════════════════════════════════════════╣"
-    echo "║  Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier (Phase 0 mode)          ║"
-    echo "║                                                            ║"
-    echo "║  ✅ Environment validation successful                      ║"
-    echo "║  ✅ Architecture detection working                         ║"
-    echo "║  ✅ Tool installation working                              ║"
-    echo "║  ✅ Environment configuration ready                        ║"
-    echo "║                                                            ║"
-    echo "║  Next steps:                                               ║"
-    echo "║  • Ready for full remote bootstrap                        ║"
-    echo "║  • All prerequisites verified and available                ║"
-    echo "║  • System ready for enterprise deployment                 ║"
-    echo "╚════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
-
-    echo
-    echo "🔍 Phase 0 Testing Summary:"
-    echo "  • Architecture: $DETECTED_OS/$DETECTED_ARCH"
-    echo "  • Tools verified: kubectl, terraform, helm, flux, jq"
-    echo "  • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier configured"
-    echo "  • No repositories cloned (minimal Phase 0 testing)"
-    echo "  • No workspace created (tools validated only)"
-    echo
-    echo "🚀 To run full remote bootstrap (Phase 1-5):"
-    echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s --nodes=${NODE_COUNT} --tier=${RESOURCE_TIER}"
-    echo
+    log_info ""
+    log_success "[Phase 0] 🎉 PHASE 0 TESTING COMPLETE!"
+    log_info ""
+    log_info "[Phase 0] Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier (Phase 0 mode)"
+    log_success "[Phase 0]   ✅ Environment validation successful"
+    log_success "[Phase 0]   ✅ Architecture detection working"
+    log_success "[Phase 0]   ✅ Tool installation working"
+    log_success "[Phase 0]   ✅ Environment configuration ready"
+    log_info ""
+    log_info "[Phase 0] 🔍 Testing Summary:"
+    log_info "[Phase 0]   • Architecture: $DETECTED_OS/$DETECTED_ARCH"
+    log_info "[Phase 0]   • Tools verified: kubectl, terraform, helm, flux, jq"
+    log_info "[Phase 0]   • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier configured"
+    log_info "[Phase 0]   • No repositories cloned (minimal Phase 0 testing)"
+    log_info "[Phase 0]   • No workspace created (tools validated only)"
+    log_info ""
+    log_info "[Phase 0] 🚀 To run full remote bootstrap (Phase 1-5):"
+    log_info "[Phase 0]   curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s --nodes=${NODE_COUNT} --tier=${RESOURCE_TIER}"
+    log_info ""
 }
 
 main() {
     # Set up comprehensive error handling
     trap 'cleanup_on_error $LINENO' ERR
-    trap 'log_warning "Script interrupted by user"; exit 130' INT TERM
+    trap 'log_warning "[Phase 0] Script interrupted by user"; exit 130' INT TERM
 
     print_banner "🧪 Enterprise Platform Phase 0 Testing" \
                  "📋 Environment + Tools Validation Only" \
                  "🎯 Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
 
-    log_phase "Phase 0a: Environment Validation"
+    log_phase "🚀 Phase 0a: Environment Validation"
     validate_environment
     detect_architecture
 
-    log_phase "Phase 0b: Tool Installation"
+    log_phase "🚀 Phase 0b: Tool Installation"
     install_tools
     verify_prerequisites
 
-    log_phase "Phase 0c: Configuration"
+    log_phase "🚀 Phase 0c: Configuration"
     configure_environment
 
-    log_phase "Phase 0: Complete!"
+    log_phase "🚀 Phase 0: Complete!"
     print_success_message
 }
 
