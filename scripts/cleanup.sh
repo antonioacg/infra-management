@@ -3,6 +3,7 @@ set -e
 
 # Enterprise Homelab Cleanup Script
 # Completely removes all bootstrap components and tools for fresh start
+# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s [--force]
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -207,11 +208,20 @@ case "${1:-}" in
     --help|-h)
         echo "Enterprise Homelab Cleanup Script"
         echo
-        echo "Usage: $0 [OPTIONS]"
+        echo "Usage:"
+        echo "  $0 [OPTIONS]"
+        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s [--force]"
         echo
         echo "Options:"
         echo "  --force    Skip confirmation prompt"
         echo "  --help     Show this help message"
+        echo
+        echo "Examples:"
+        echo "  # Interactive cleanup with confirmation"
+        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash"
+        echo
+        echo "  # Force cleanup without confirmation"
+        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s --force"
         echo
         echo "This script completely removes all bootstrap components:"
         echo "  • k3s cluster and all Kubernetes resources"
