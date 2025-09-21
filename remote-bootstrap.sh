@@ -63,7 +63,7 @@ run_phase_0() {
 
     # Use our perfected Phase 0 script
     log_info "Executing remote Phase 0 script..."
-    if curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap-phase0.sh | GITHUB_TOKEN="$GITHUB_TOKEN" bash -s -- --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
+    if curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/remote-bootstrap-phase0.sh | GITHUB_TOKEN="$GITHUB_TOKEN" bash -s -- --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 0 completed successfully"
     else
         log_error "Phase 0 failed"
