@@ -16,6 +16,21 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Get normalized OS name
+get_os() {
+    uname -s | tr '[:upper:]' '[:lower:]'
+}
+
+# Get normalized architecture name
+get_arch() {
+    local arch=$(uname -m)
+    case "$arch" in
+        x86_64) echo "amd64" ;;
+        arm64|aarch64) echo "arm64" ;;
+        *) log_error "Unsupported architecture: $arch"; return 1 ;;
+    esac
+}
+
 # Streamlined download function with retry logic
 # Usage: download_with_retry URL [OUTPUT_FILE] [MAX_ATTEMPTS]
 # If OUTPUT_FILE is omitted or "-", outputs to stdout for piping
@@ -61,6 +76,39 @@ download_with_retry() {
 
     log_error "❌ Failed to download $description after $max_attempts attempts"
     return 1
+}
+
+# Extract and install binary from zip file
+# Usage: extract_and_install_binary ZIP_FILE BINARY_NAME [TARGET_DIR]
+extract_and_install_binary() {
+    local zip_file="$1"
+    local binary_name="$2"
+    local target_dir="${3:-/usr/local/bin}"
+
+    log_info "📦 Extracting $binary_name from $zip_file..."
+
+    if unzip -q "$zip_file"; then
+        if [[ -f "$binary_name" && -s "$binary_name" ]]; then
+            chmod +x "$binary_name"
+            if sudo mv "$binary_name" "$target_dir/"; then
+                log_success "✅ $binary_name successfully installed to $target_dir/"
+                rm -f "$zip_file"
+                return 0
+            else
+                log_error "❌ Failed to move $binary_name to $target_dir/"
+                rm -f "$binary_name" "$zip_file"
+                return 1
+            fi
+        else
+            log_error "❌ Extracted $binary_name binary is empty or missing"
+            rm -f "$binary_name" "$zip_file"
+            return 1
+        fi
+    else
+        log_error "❌ Failed to unzip $zip_file"
+        rm -f "$zip_file"
+        return 1
+    fi
 }
 
 # Function to install a package using appropriate package manager
@@ -117,14 +165,8 @@ install_kubectl() {
     log_info "Installing kubectl"
 
     # Detect OS and architecture
-    local OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-    local ARCH=$(uname -m)
-
-    case "$ARCH" in
-        x86_64) ARCH="amd64" ;;
-        arm64|aarch64) ARCH="arm64" ;;
-        *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
-    esac
+    local OS=$(get_os)
+    local ARCH=$(get_arch) || return 1
 
     # Get latest stable version with error handling
     KUBECTL_VERSION=$(download_with_retry "https://dl.k8s.io/release/stable.txt")
@@ -190,7 +232,6 @@ install_helm() {
     log_success "Helm installed"
 }
 
-# SOPS removed - using zero-secrets architecture with External Secrets
 
 # Install Terraform
 install_terraform() {
@@ -202,40 +243,15 @@ install_terraform() {
     log_info "Installing Terraform"
 
     local TERRAFORM_VERSION="${TERRAFORM_VERSION:-1.6.6}"
-    local OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-    local ARCH=$(uname -m)
-
-    case "$ARCH" in
-        x86_64) ARCH="amd64" ;;
-        arm64|aarch64) ARCH="arm64" ;;
-        *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
-    esac
+    local OS=$(get_os)
+    local ARCH=$(get_arch) || return 1
 
     # Download and install Terraform with retry logic
     local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${OS}_${ARCH}.zip"
     local TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
 
     if download_with_retry "$TERRAFORM_URL" "$TERRAFORM_ZIP"; then
-        if unzip "$TERRAFORM_ZIP"; then
-            if [[ -f terraform && -s terraform ]]; then
-                chmod +x terraform
-                if sudo mv terraform /usr/local/bin/; then
-                    log_success "terraform successfully installed to /usr/local/bin/"
-                    rm -f "$TERRAFORM_ZIP"
-                else
-                    log_error "Failed to move terraform to /usr/local/bin/"
-                    return 1
-                fi
-            else
-                log_error "Extracted terraform binary is empty or missing"
-                rm -f terraform "$TERRAFORM_ZIP"
-                return 1
-            fi
-        else
-            log_error "Failed to unzip $TERRAFORM_ZIP"
-            rm -f "$TERRAFORM_ZIP"
-            return 1
-        fi
+        extract_and_install_binary "$TERRAFORM_ZIP" "terraform"
     else
         return 1
     fi
@@ -253,40 +269,15 @@ install_vault_cli() {
     log_info "Installing Vault CLI"
 
     local VAULT_VERSION="${VAULT_VERSION:-1.15.2}"
-    local OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-    local ARCH=$(uname -m)
-
-    case "$ARCH" in
-        x86_64) ARCH="amd64" ;;
-        arm64|aarch64) ARCH="arm64" ;;
-        *) log_error "Unsupported architecture: $ARCH"; return 1 ;;
-    esac
+    local OS=$(get_os)
+    local ARCH=$(get_arch) || return 1
 
     # Download and install Vault CLI
     local VAULT_ZIP="vault_${VAULT_VERSION}_${OS}_${ARCH}.zip"
     local VAULT_URL="https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
 
     if download_with_retry "$VAULT_URL" "$VAULT_ZIP"; then
-        if unzip "$VAULT_ZIP"; then
-            if [[ -f vault && -s vault ]]; then
-                chmod +x vault
-                if sudo mv vault /usr/local/bin/; then
-                    rm -f "$VAULT_ZIP"
-                    log_success "Vault CLI successfully installed to /usr/local/bin/"
-                else
-                    log_error "Failed to move vault to /usr/local/bin/"
-                    return 1
-                fi
-            else
-                log_error "Extracted vault binary is empty or missing"
-                rm -f vault "$VAULT_ZIP"
-                return 1
-            fi
-        else
-            log_error "Failed to unzip $VAULT_ZIP"
-            rm -f "$VAULT_ZIP"
-            return 1
-        fi
+        extract_and_install_binary "$VAULT_ZIP" "vault"
     else
         return 1
     fi
@@ -294,7 +285,6 @@ install_vault_cli() {
     log_success "Vault CLI ${VAULT_VERSION} installed"
 }
 
-# Age removed - not needed for zero-secrets architecture
 
 # Verify installations
 verify_tools() {
@@ -367,8 +357,8 @@ validate_tools() {
 
     # System information
     log_info "📋 System Information:"
-    log_info "  • OS: $(uname -s)"
-    log_info "  • Architecture: $(uname -m)"
+    log_info "  • OS: $(uname -s) (normalized: $(get_os))"
+    log_info "  • Architecture: $(uname -m) (normalized: $(get_arch))"
     log_info "  • Kernel: $(uname -r)"
     log_info "  • User: $(whoami)"
     log_info "  • Working Directory: $(pwd)"
