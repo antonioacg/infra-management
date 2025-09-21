@@ -110,14 +110,17 @@ detect_architecture() {
 install_tools() {
     log_info "[Phase 0b] Installing required tools remotely..."
 
-    # Execute tool installation script directly via curl pipe
-    local install_script_url="https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/install-tools.sh"
+    # Import tool installation script using smart_import (preserves logging context)
+    log_info "[Phase 0b] Importing tool installation script via smart_import..."
 
-    log_info "[Phase 0b] Executing tool installation script remotely..."
-    if curl -sfL "$install_script_url" | bash; then
+    # Execute in subshell to avoid main() function collision
+    if (
+        smart_import "infra-management/scripts/install-tools.sh"
+        main  # Runs install-tools main() in isolated subshell
+    ); then
         log_success "[Phase 0b] ✅ Tools installed successfully"
     else
-        log_error "[Phase 0b] Failed to execute tool installation script from: $install_script_url"
+        log_error "[Phase 0b] Failed to execute tool installation"
         exit 1
     fi
 }

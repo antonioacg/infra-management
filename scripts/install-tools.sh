@@ -326,7 +326,120 @@ main() {
     echo ""
 }
 
+# Validation function for current state
+validate_tools() {
+    log_info "🔍 Tool Installation Validation Report"
+    echo ""
+
+    # System information
+    log_info "📋 System Information:"
+    log_info "  • OS: $(uname -s)"
+    log_info "  • Architecture: $(uname -m)"
+    log_info "  • Kernel: $(uname -r)"
+    log_info "  • User: $(whoami)"
+    log_info "  • Working Directory: $(pwd)"
+    log_info "  • PATH: $PATH"
+    echo ""
+
+    # Tool status and versions
+    log_info "🔧 Tool Status & Versions:"
+    local tools=(
+        "curl:curl --version | head -1"
+        "wget:wget --version | head -1"
+        "git:git version"
+        "jq:jq --version"
+        "unzip:unzip -v | head -1"
+        "kubectl:kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null || echo 'not installed'"
+        "flux:flux version --client 2>/dev/null | grep 'flux version' || echo 'not installed'"
+        "helm:helm version --short 2>/dev/null || echo 'not installed'"
+        "terraform:terraform version -json 2>/dev/null | jq -r .terraform_version || echo 'not installed'"
+        "vault:vault version 2>/dev/null | head -1 || echo 'not installed'"
+    )
+
+    for tool_info in "${tools[@]}"; do
+        local tool="${tool_info%%:*}"
+        local version_cmd="${tool_info#*:}"
+
+        if command_exists "$tool"; then
+            local version=$(eval "$version_cmd" 2>/dev/null || echo "version unknown")
+            local path=$(command -v "$tool")
+            log_success "  ✅ $tool: $version (at: $path)"
+        else
+            log_error "  ❌ $tool: not found"
+        fi
+    done
+
+    echo ""
+    log_info "🎯 Installation Requirements:"
+    local required_tools=("curl" "wget" "git" "jq" "unzip" "kubectl" "flux" "helm" "terraform")
+    local missing_tools=()
+
+    for tool in "${required_tools[@]}"; do
+        if ! command_exists "$tool"; then
+            missing_tools+=("$tool")
+        fi
+    done
+
+    if [ ${#missing_tools[@]} -eq 0 ]; then
+        log_success "  ✅ All required tools are installed"
+    else
+        log_warning "  ⚠️  Missing tools: ${missing_tools[*]}"
+        log_info "  💡 Run without --validate to install missing tools"
+    fi
+
+    echo ""
+    log_info "🔍 Package Manager Detection:"
+    if command_exists brew; then
+        log_success "  ✅ Homebrew (macOS): $(brew --version | head -1)"
+    elif command_exists apt-get; then
+        log_success "  ✅ apt-get (Ubuntu/Debian): available"
+    elif command_exists yum; then
+        log_success "  ✅ yum (CentOS/RHEL): available"
+    elif command_exists dnf; then
+        log_success "  ✅ dnf (Fedora): available"
+    elif command_exists pacman; then
+        log_success "  ✅ pacman (Arch Linux): available"
+    else
+        log_error "  ❌ No supported package manager found"
+    fi
+
+    echo ""
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --validate)
+                validate_tools
+                exit 0
+                ;;
+            --help|-h)
+                echo "Usage: $0 [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --validate    Show current tool status and system information"
+                echo "  --help, -h    Show this help message"
+                echo ""
+                echo "Environment Variables:"
+                echo "  LOG_LEVEL     Set logging level (ERROR|WARN|INFO|DEBUG|TRACE)"
+                echo "  USE_LOCAL_IMPORTS=true    Use local filesystem instead of remote imports"
+                echo "  DEBUG_IMPORTS=true        Show import resolution details"
+                echo ""
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Use --help for usage information"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
 # Run main function if script is executed directly
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-    main "$@"
+    parse_args "$@"
+    main
 fi

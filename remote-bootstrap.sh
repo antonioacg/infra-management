@@ -5,102 +5,70 @@ set -e
 # Single-command remote deployment with complete automation
 # Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s homelab
 
-# Colors for output
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# Load centralized logging library
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+smart_import "infra-management/scripts/lib/logging.sh"
 
-log_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
-log_success() { echo -e "${GREEN}✅ $1${NC}"; }
-log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
-log_error() { echo -e "${RED}❌ $1${NC}"; }
-log_phase() { echo -e "${CYAN}🚀 $1${NC}"; }
-
-# Configuration
-ENVIRONMENT=${1:-homelab}
-WORK_DIR="$HOME/homelab-bootstrap"
+# Parse command line arguments for enterprise scaling
+NODE_COUNT=1
+RESOURCE_TIER="small"
+WORK_DIR="$HOME/platform-bootstrap"
 GITHUB_ORG="antonioacg"
+
+# Parse parameters
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --nodes=*)
+            NODE_COUNT="${1#*=}"
+            shift
+            ;;
+        --tier=*)
+            RESOURCE_TIER="${1#*=}"
+            shift
+            ;;
+        *)
+            echo "Unknown parameter: $1"
+            echo "Usage: --nodes=N --tier=SIZE"
+            exit 1
+            ;;
+    esac
+done
 
 # Repository URLs
 INFRA_MGMT_REPO="https://github.com/${GITHUB_ORG}/infra-management.git"
 INFRA_REPO="https://github.com/${GITHUB_ORG}/infra.git"
 DEPLOYMENTS_REPO="https://github.com/${GITHUB_ORG}/deployments.git"
 
-print_banner() {
-    echo -e "${GREEN}"
-    echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║           🚀 Enterprise Homelab Remote Bootstrap          ║"
-    echo "║           📋 Terraform-First Architecture                  ║"
-    echo "║           🎯 Environment: $ENVIRONMENT                      ║"
-    echo "╚════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
-}
-
-validate_environment() {
-    log_info "Validating environment and prerequisites..."
-
+validate_token() {
     # Check GitHub token
     if [[ -z "$GITHUB_TOKEN" ]]; then
         log_error "GITHUB_TOKEN environment variable required"
         echo
         echo "Usage:"
-        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s [homelab|business]"
+        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- --nodes=N --tier=SIZE"
         echo
         echo "Get token at: https://github.com/settings/tokens"
         echo "Required scopes: repo, workflow"
         exit 1
     fi
-
-    # Validate environment
-    if [[ ! "$ENVIRONMENT" =~ ^(homelab|business)$ ]]; then
-        log_error "Environment must be 'homelab' or 'business'"
-        exit 1
-    fi
-
-    # Check basic system requirements
-    if ! command -v curl >/dev/null 2>&1; then
-        log_error "curl is required but not installed"
-        exit 1
-    fi
-
-    if ! command -v git >/dev/null 2>&1; then
-        log_error "git is required but not installed"
-        exit 1
-    fi
-
-    log_success "Environment validated: $ENVIRONMENT"
+    log_success "GitHub token validated"
 }
 
-detect_architecture() {
-    log_info "Detecting system architecture..."
+show_banner() {
+    print_banner "🚀 Enterprise Platform Remote Bootstrap" "Terraform-First Architecture" "Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
+}
 
-    local arch=$(uname -m)
-    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+run_phase_0() {
+    log_info "Running Phase 0 (Environment + Tools validation)..."
 
-    case "$arch" in
-        x86_64) ARCH="amd64" ;;
-        arm64|aarch64) ARCH="arm64" ;;
-        *)
-            log_error "Unsupported architecture: $arch"
-            exit 1
-            ;;
-    esac
-
-    case "$os" in
-        linux) OS="linux" ;;
-        darwin) OS="darwin" ;;
-        *)
-            log_error "Unsupported operating system: $os"
-            exit 1
-            ;;
-    esac
-
-    log_success "Detected: $OS/$ARCH"
-    export DETECTED_ARCH="$ARCH"
-    export DETECTED_OS="$OS"
+    # Use our perfected Phase 0 script
+    log_info "Executing remote Phase 0 script..."
+    if curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap-phase0.sh | GITHUB_TOKEN="$GITHUB_TOKEN" bash -s -- --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
+        log_success "Phase 0 completed successfully"
+    else
+        log_error "Phase 0 failed"
+        exit 1
+    fi
 }
 
 setup_workspace() {
@@ -282,11 +250,11 @@ main() {
     trap 'cleanup_on_error $LINENO' ERR
     trap 'log_warning "Script interrupted by user"; rollback_on_failure; exit 130' INT TERM
 
-    print_banner
+    validate_token
+    show_banner
 
-    log_phase "Phase 0: Environment Validation"
-    validate_environment
-    detect_architecture
+    log_phase "Phase 0: Environment + Tools Validation"
+    run_phase_0
 
     log_phase "Phase 1: Workspace Setup"
     setup_workspace
