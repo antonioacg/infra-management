@@ -4,8 +4,12 @@
 # Remove set -e to prevent silent exits - we want to see errors
 
 # Load import utility and logging library (bash 3.2+ compatible)
+# Propagate LOG_LEVEL from environment if not set
+export LOG_LEVEL="${LOG_LEVEL:-INFO}"
 eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
+
+log_debug "Install tools script starting with LOG_LEVEL=$LOG_LEVEL"
 
 # Function to check if a command exists
 command_exists() {
