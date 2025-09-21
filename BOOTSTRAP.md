@@ -13,11 +13,11 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/boo
 ```
 
 That's it! This single command will:
-1. ✅ Validate environment and detect architecture (x86_64/ARM64)
-2. ✅ Clone all required repositories (infra-management, infra, deployments)
-3. ✅ Install all tools (kubectl, terraform, helm, flux)
-4. ✅ Execute the complete 5-phase Terraform-first bootstrap
-5. ✅ Deploy Vault, External Secrets, Flux, and Nginx
+1. ✅ **Phase 0**: Validate environment and install tools (kubectl, terraform, helm, flux)
+2. ✅ **Phase 1**: Deploy k3s cluster + bootstrap storage (MinIO, PostgreSQL) with LOCAL state
+3. ✅ **Phase 2**: Deploy Vault + External Secrets + Ingress with REMOTE state migration
+4. ✅ **Phase 3**: Activate GitOps (Flux) for application deployments
+5. ✅ **Complete Platform**: Enterprise-ready infrastructure from single command
 
 ## 🎯 Enterprise Scaling
 
@@ -34,6 +34,40 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/boo
 ### Enterprise Scale Deployment
 ```bash
 curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=10 --tier=large
+```
+
+## 🧪 Individual Phase Testing
+
+For development and troubleshooting, each phase can be tested independently:
+
+### **Phase 0: Environment + Tools**
+```bash
+# Standalone testing (full validation)
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+
+# Called from main bootstrap (skip redundant validation)
+./scripts/bootstrap-phase0.sh --nodes=1 --tier=small --skip-validation
+```
+
+### **Phase 1: k3s + Bootstrap Storage**
+```bash
+# Standalone testing (includes environment validation)
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+
+# Called from main bootstrap (skip Phase 0 validation)
+./scripts/bootstrap-phase1.sh --nodes=1 --tier=small --skip-validation
+```
+
+### **Phase 2: Vault + Infrastructure**
+```bash
+# Requires Phase 1 foundation (k3s + storage)
+./scripts/bootstrap-phase2.sh --nodes=1 --tier=small --skip-validation
+```
+
+### **Phase 3: GitOps Activation**
+```bash
+# Requires Phase 2 infrastructure (Vault + External Secrets)
+./scripts/bootstrap-phase3.sh --nodes=1 --tier=small --skip-validation
 ```
 
 ## 📋 Prerequisites
