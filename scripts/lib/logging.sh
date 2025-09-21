@@ -132,7 +132,7 @@ print_banner() {
 
     echo -e "${GREEN}"
     printf "╔"
-    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
+    for ((i=0; i<$((BANNER_WIDTH - 2)); i++)); do printf "═"; done
     printf "╗\n"
 
     # Estimate display width (accounts for common emojis)
@@ -166,7 +166,7 @@ print_banner() {
     fi
 
     printf "╚"
-    printf "%*s" $((BANNER_WIDTH - 2)) | tr ' ' '═'
+    for ((i=0; i<$((BANNER_WIDTH - 2)); i++)); do printf "═"; done
     printf "╝\n"
     echo -e "${NC}"
 }
