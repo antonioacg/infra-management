@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-# Enterprise-Ready Platform Remote Bootstrap - Phase 0 Testing
+# Enterprise-Ready Platform Bootstrap - Phase 0 Testing
 # Tests ONLY: environment validation, architecture detection, and tool installation
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
 
 # Load import utility and logging library (bash 3.2+ compatible)
 eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
@@ -43,7 +43,7 @@ validate_environment() {
         log_error "[Phase 0a] ❌ GITHUB_TOKEN environment variable required"
         log_info ""
         log_info "Usage:"
-        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap-phase0.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
+        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/bootstrap-phase0.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
         log_info ""
         log_info "Parameters:"
         log_info "  --nodes=N     Number of nodes (default: 1)"
@@ -218,8 +218,8 @@ print_success_message() {
     log_info "[Phase 0]   • No repositories cloned (minimal Phase 0 testing)"
     log_info "[Phase 0]   • No workspace created (tools validated only)"
     log_info ""
-    log_info "[Phase 0] 🚀 To run full remote bootstrap (Phase 1-5):"
-    log_info "[Phase 0]   curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s --nodes=${NODE_COUNT} --tier=${RESOURCE_TIER}"
+    log_info "[Phase 0] 🚀 To run full bootstrap (Phase 1-5):"
+    log_info "[Phase 0]   curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s --nodes=${NODE_COUNT} --tier=${RESOURCE_TIER}"
     log_info ""
 }
 

@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-# Enterprise-Ready Homelab Remote Bootstrap v3.0
-# Single-command remote deployment with complete automation
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
+# Enterprise-Ready Platform Bootstrap v3.0
+# Single-command deployment with complete automation
+# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 
 # Load centralized logging library
 eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
@@ -45,7 +45,7 @@ validate_token() {
         log_error "GITHUB_TOKEN environment variable required"
         echo
         echo "Usage:"
-        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- --nodes=N --tier=SIZE"
+        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- --nodes=N --tier=SIZE"
         echo
         echo "Get token at: https://github.com/settings/tokens"
         echo "Required scopes: repo, workflow"
@@ -55,15 +55,15 @@ validate_token() {
 }
 
 show_banner() {
-    print_banner "🚀 Enterprise Platform Remote Bootstrap" "Terraform-First Architecture" "Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
+    print_banner "🚀 Enterprise Platform Bootstrap" "Terraform-First Architecture" "Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
 }
 
 run_phase_0() {
     log_info "Running Phase 0 (Environment + Tools validation)..."
 
     # Use our perfected Phase 0 script
-    log_info "Executing remote Phase 0 script..."
-    if curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/remote-bootstrap-phase0.sh | GITHUB_TOKEN="$GITHUB_TOKEN" bash -s -- --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
+    log_info "Executing Phase 0 script..."
+    if curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="$GITHUB_TOKEN" bash -s -- --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 0 completed successfully"
     else
         log_error "Phase 0 failed"

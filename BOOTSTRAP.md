@@ -1,15 +1,15 @@
-# 🚀 Single-Command Remote Bootstrap
+# 🚀 Single-Command Bootstrap
 
 ## Overview
 
-Deploy a complete enterprise-grade Kubernetes platform with a single command from any Linux machine. This remote bootstrap script automatically handles tool installation, repository cloning, and the full 5-phase Terraform-first deployment.
+Deploy a complete enterprise-grade Kubernetes platform with a single command from any Linux machine. This bootstrap script automatically handles tool installation, repository cloning, and the full 5-phase Terraform-first deployment.
 
 ## ⚡ Quick Start
 
 ### One-Command Deployment
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
 ```
 
 That's it! This single command will:
@@ -23,17 +23,17 @@ That's it! This single command will:
 
 ### Single Node Deployment (Default)
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
 ```
 
 ### Multi-Node Production Deployment
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=3 --tier=medium
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=3 --tier=medium
 ```
 
 ### Enterprise Scale Deployment
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=10 --tier=large
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=10 --tier=large
 ```
 
 ## 📋 Prerequisites
@@ -62,7 +62,7 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/rem
 ### Manual Download and Execution
 ```bash
 # Download the script
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh -o bootstrap.sh
+curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh -o bootstrap.sh
 chmod +x bootstrap.sh
 
 # Execute with custom environment
