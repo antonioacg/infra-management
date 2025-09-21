@@ -5,16 +5,9 @@ set -e
 # Single-command remote deployment with complete automation
 # Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 
-# Load centralized logging library with DEV_MODE support
-if [[ "${DEV_MODE:-false}" == "true" ]]; then
-    # Development mode: use relative path
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    source "${SCRIPT_DIR}/scripts/lib/logging.sh"
-else
-    # Production mode: use remote URL
-    eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
-    smart_import "infra-management/scripts/lib/logging.sh"
-fi
+# Load centralized logging library
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+smart_import "infra-management/scripts/lib/logging.sh"
 
 # Parse command line arguments for enterprise scaling
 NODE_COUNT=1
