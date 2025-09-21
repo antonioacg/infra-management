@@ -69,6 +69,6 @@ smart_import() {
         local remote_url="https://raw.githubusercontent.com/${GITHUB_ORG}/${repo_name}/main/${lib_path#*/}"
 
         [[ "${DEBUG_IMPORTS:-false}" == "true" ]] && echo "DEBUG: Importing remote: $remote_url" >&2
-        source <(curl -sfL "$remote_url")
+        eval "$(curl -sfL "$remote_url")"
     fi
 }
