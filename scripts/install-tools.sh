@@ -16,6 +16,53 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Streamlined download function with retry logic
+# Usage: download_with_retry URL [OUTPUT_FILE] [MAX_ATTEMPTS]
+# If OUTPUT_FILE is omitted or "-", outputs to stdout for piping
+download_with_retry() {
+    local url="$1"
+    local output_file="${2:--}"  # Default to stdout
+    local max_attempts="${3:-3}"
+
+    # Auto-generate description from URL
+    local description="${output_file}"
+    [[ "$output_file" == "-" ]] && description="$(basename "$url")"
+
+    log_debug "Downloading from: $url"
+
+    for attempt in $(seq 1 $max_attempts); do
+        log_info "📥 Download attempt $attempt/$max_attempts for $description..."
+
+        local curl_cmd="curl -sSfL --connect-timeout 30 --max-time 300 --retry 1"
+
+        if [[ "$output_file" == "-" ]]; then
+            # Output to stdout for piping
+            if $curl_cmd "$url"; then
+                log_success "✅ $description downloaded successfully"
+                return 0
+            fi
+        else
+            # Save to file
+            if $curl_cmd -o "$output_file" "$url"; then
+                if [[ -f "$output_file" && -s "$output_file" ]]; then
+                    local size=$(ls -lh "$output_file" 2>/dev/null | awk '{print $5}' || echo "unknown")
+                    log_success "✅ $description downloaded successfully ($size)"
+                    return 0
+                else
+                    log_warning "Downloaded file is empty or missing"
+                    rm -f "$output_file"
+                fi
+            fi
+        fi
+
+        log_warning "Download attempt $attempt failed"
+        [[ $attempt -lt $max_attempts ]] && sleep 2
+    done
+
+    log_error "❌ Failed to download $description after $max_attempts attempts"
+    return 1
+}
+
 # Function to install a package using appropriate package manager
 install_package() {
     local package="$1"
@@ -80,40 +127,26 @@ install_kubectl() {
     esac
 
     # Get latest stable version with error handling
-    KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+    KUBECTL_VERSION=$(download_with_retry "https://dl.k8s.io/release/stable.txt")
     if [[ -z "$KUBECTL_VERSION" ]]; then
         log_error "Failed to fetch kubectl version"
         return 1
     fi
 
-    # Download and install kubectl with retry logic
+    # Download and install kubectl using our retry function
     local KUBECTL_URL="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS}/${ARCH}/kubectl"
-    log_info "kubectl download URL: $KUBECTL_URL"
 
-    for attempt in 1 2 3; do
-        log_info "Download attempt $attempt/3..."
-        log_info "Downloading from: $KUBECTL_URL"
-        if curl -L --connect-timeout 30 --max-time 300 -o kubectl "$KUBECTL_URL" -w "HTTP Status: %{http_code}, Download size: %{size_download} bytes\n"; then
-            if [[ -f kubectl && -s kubectl ]]; then
-                chmod +x kubectl
-                if sudo mv kubectl /usr/local/bin/; then
-                    log_success "kubectl successfully installed to /usr/local/bin/"
-                    break
-                else
-                    log_error "Failed to move kubectl to /usr/local/bin/"
-                    return 1
-                fi
-            else
-                log_error "Downloaded kubectl file is empty or missing"
-                rm -f kubectl
-                [ $attempt -eq 3 ] && { log_error "Failed to download kubectl after 3 attempts"; return 1; }
-            fi
+    if download_with_retry "$KUBECTL_URL" "kubectl"; then
+        chmod +x kubectl
+        if sudo mv kubectl /usr/local/bin/; then
+            log_success "kubectl successfully installed to /usr/local/bin/"
         else
-            log_warning "Download attempt $attempt failed"
-            [ $attempt -eq 3 ] && { log_error "Failed to download kubectl after 3 attempts"; return 1; }
-            sleep 2
+            log_error "Failed to move kubectl to /usr/local/bin/"
+            return 1
         fi
-    done
+    else
+        return 1
+    fi
 
     log_success "kubectl ${KUBECTL_VERSION} installed"
 }
@@ -128,8 +161,7 @@ install_flux() {
     log_info "Installing Flux CLI"
 
     # Install Flux using official script with error handling
-    log_info "Downloading Flux installation script..."
-    if curl -s https://fluxcd.io/install.sh | sudo bash; then
+    if download_with_retry "https://fluxcd.io/install.sh" | sudo bash; then
         log_success "Flux CLI installed successfully"
     else
         log_error "Failed to install Flux CLI - check network connectivity and permissions"
@@ -148,17 +180,12 @@ install_helm() {
     log_info "Installing Helm"
 
     # Install Helm using official script with retry logic
-    for attempt in 1 2 3; do
-        log_info "Download attempt $attempt/3..."
-        log_info "Downloading Helm installation script..."
-        if curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; then
-            break
-        else
-            log_warning "Download attempt $attempt failed"
-            [ $attempt -eq 3 ] && { log_error "Failed to install helm after 3 attempts"; return 1; }
-            sleep 2
-        fi
-    done
+    if download_with_retry "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3" | bash; then
+        log_success "Helm installation script executed successfully"
+    else
+        log_error "Failed to install helm after retry attempts"
+        return 1
+    fi
 
     log_success "Helm installed"
 }
@@ -187,45 +214,31 @@ install_terraform() {
     # Download and install Terraform with retry logic
     local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${OS}_${ARCH}.zip"
     local TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
-    log_info "terraform download URL: $TERRAFORM_URL"
 
-    for attempt in 1 2 3; do
-        log_info "Download attempt $attempt/3..."
-        log_info "Downloading from: $TERRAFORM_URL"
-        if curl -L --connect-timeout 30 --max-time 180 -o "$TERRAFORM_ZIP" "$TERRAFORM_URL" -w "HTTP Status: %{http_code}, Download size: %{size_download} bytes\n"; then
-            if [[ -f "$TERRAFORM_ZIP" && -s "$TERRAFORM_ZIP" ]]; then
-                if unzip "$TERRAFORM_ZIP"; then
-                    if [[ -f terraform && -s terraform ]]; then
-                        chmod +x terraform
-                        if sudo mv terraform /usr/local/bin/; then
-                            log_success "terraform successfully installed to /usr/local/bin/"
-                            rm -f "$TERRAFORM_ZIP"
-                            break
-                        else
-                            log_error "Failed to move terraform to /usr/local/bin/"
-                            return 1
-                        fi
-                    else
-                        log_error "Extracted terraform binary is empty or missing"
-                        rm -f terraform "$TERRAFORM_ZIP"
-                        [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
-                    fi
-                else
-                    log_error "Failed to unzip $TERRAFORM_ZIP"
+    if download_with_retry "$TERRAFORM_URL" "$TERRAFORM_ZIP"; then
+        if unzip "$TERRAFORM_ZIP"; then
+            if [[ -f terraform && -s terraform ]]; then
+                chmod +x terraform
+                if sudo mv terraform /usr/local/bin/; then
+                    log_success "terraform successfully installed to /usr/local/bin/"
                     rm -f "$TERRAFORM_ZIP"
-                    [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
+                else
+                    log_error "Failed to move terraform to /usr/local/bin/"
+                    return 1
                 fi
             else
-                log_error "Downloaded terraform zip file is empty or missing"
-                rm -f "$TERRAFORM_ZIP"
-                [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
+                log_error "Extracted terraform binary is empty or missing"
+                rm -f terraform "$TERRAFORM_ZIP"
+                return 1
             fi
         else
-            log_warning "Download attempt $attempt failed"
-            [ $attempt -eq 3 ] && { log_error "Failed to download terraform after 3 attempts"; return 1; }
-            sleep 2
+            log_error "Failed to unzip $TERRAFORM_ZIP"
+            rm -f "$TERRAFORM_ZIP"
+            return 1
         fi
-    done
+    else
+        return 1
+    fi
 
     log_success "Terraform ${TERRAFORM_VERSION} installed"
 }
@@ -251,11 +264,32 @@ install_vault_cli() {
 
     # Download and install Vault CLI
     local VAULT_ZIP="vault_${VAULT_VERSION}_${OS}_${ARCH}.zip"
-    curl -LO "https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
-    unzip "$VAULT_ZIP"
-    chmod +x vault
-    sudo mv vault /usr/local/bin/
-    rm -f "$VAULT_ZIP"
+    local VAULT_URL="https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
+
+    if download_with_retry "$VAULT_URL" "$VAULT_ZIP"; then
+        if unzip "$VAULT_ZIP"; then
+            if [[ -f vault && -s vault ]]; then
+                chmod +x vault
+                if sudo mv vault /usr/local/bin/; then
+                    rm -f "$VAULT_ZIP"
+                    log_success "Vault CLI successfully installed to /usr/local/bin/"
+                else
+                    log_error "Failed to move vault to /usr/local/bin/"
+                    return 1
+                fi
+            else
+                log_error "Extracted vault binary is empty or missing"
+                rm -f vault "$VAULT_ZIP"
+                return 1
+            fi
+        else
+            log_error "Failed to unzip $VAULT_ZIP"
+            rm -f "$VAULT_ZIP"
+            return 1
+        fi
+    else
+        return 1
+    fi
     
     log_success "Vault CLI ${VAULT_VERSION} installed"
 }
