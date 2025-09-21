@@ -6,8 +6,12 @@ set -e
 # Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s [--force]
 
 # Load import utility and logging library (bash 3.2+ compatible)
+# Propagate LOG_LEVEL from environment if not set
+export LOG_LEVEL="${LOG_LEVEL:-INFO}"
 eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
+
+log_debug "Cleanup script starting with LOG_LEVEL=$LOG_LEVEL"
 
 cleanup_banner() {
     print_banner "🧹 Enterprise Homelab Cleanup" "⚠️  DESTRUCTIVE OPERATION"
@@ -33,14 +37,24 @@ cleanup_k3s() {
 
     # Stop k3s service
     if systemctl is-active --quiet k3s 2>/dev/null; then
-        sudo systemctl stop k3s || true
-        log_success "k3s service stopped"
+        log_debug "k3s service is active, stopping..."
+        if sudo systemctl stop k3s; then
+            log_success "k3s service stopped"
+        else
+            log_error "Failed to stop k3s service"
+        fi
+    else
+        log_debug "k3s service not active"
     fi
 
     # Uninstall k3s completely
     if command -v k3s-uninstall.sh >/dev/null 2>&1; then
-        sudo k3s-uninstall.sh || true
-        log_success "k3s uninstalled"
+        log_debug "Running k3s-uninstall.sh..."
+        if sudo k3s-uninstall.sh; then
+            log_success "k3s uninstalled"
+        else
+            log_error "k3s uninstall script failed"
+        fi
     else
         log_info "k3s uninstall script not found (may not be installed)"
     fi
@@ -54,11 +68,15 @@ cleanup_tools() {
 
     for tool in "${tools[@]}"; do
         if [[ -f "/usr/local/bin/$tool" ]]; then
-            sudo rm -f "/usr/local/bin/$tool" 2>/dev/null || true
-            log_success "  ✅ $tool removed"
-            ((removed_count++))
+            log_debug "Attempting to remove /usr/local/bin/$tool"
+            if sudo rm -f "/usr/local/bin/$tool"; then
+                log_success "  ✅ $tool removed"
+                ((removed_count++))
+            else
+                log_error "  ❌ Failed to remove $tool"
+            fi
         else
-            log_info "  ℹ️  $tool not found"
+            log_debug "  $tool not found"
         fi
     done
 
@@ -96,14 +114,31 @@ cleanup_processes() {
     log_info "Stopping running processes..."
 
     # Kill port-forwards
-    pkill -f 'kubectl port-forward' 2>/dev/null || true
-    pkill -f 'port-forward' 2>/dev/null || true
+    if pkill -f 'kubectl port-forward' 2>/dev/null; then
+        log_debug "kubectl port-forward processes killed"
+    else
+        log_debug "No kubectl port-forward processes found"
+    fi
+
+    if pkill -f 'port-forward' 2>/dev/null; then
+        log_debug "port-forward processes killed"
+    else
+        log_debug "No port-forward processes found"
+    fi
 
     # Kill any remaining k3s processes
-    pkill -f 'k3s' 2>/dev/null || true
+    if pkill -f 'k3s' 2>/dev/null; then
+        log_debug "k3s processes killed"
+    else
+        log_debug "No k3s processes found"
+    fi
 
     # Kill terraform processes
-    pkill -f 'terraform' 2>/dev/null || true
+    if pkill -f 'terraform' 2>/dev/null; then
+        log_debug "terraform processes killed"
+    else
+        log_debug "No terraform processes found"
+    fi
 
     log_success "Processes cleaned up"
 }
