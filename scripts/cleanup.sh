@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+# Don't use set -e as cleanup operations may have expected failures
+# We handle errors explicitly with proper logging
 
 # Enterprise Homelab Cleanup Script
 # Completely removes all bootstrap components and tools for fresh start
@@ -98,12 +99,29 @@ cleanup_directories() {
     local removed_count=0
 
     for dir in "${directories[@]}"; do
-        if [[ -d "$dir" ]] || [[ "$dir" == *"*"* && $(ls $dir 2>/dev/null) ]]; then
-            rm -rf $dir 2>/dev/null || true
-            log_success "  ✅ $dir removed"
-            ((removed_count++))
+        if [[ -d "$dir" ]]; then
+            log_debug "Removing directory: $dir"
+            if rm -rf "$dir" 2>/dev/null; then
+                log_success "  ✅ $dir removed"
+                ((removed_count++))
+            else
+                log_error "  ❌ Failed to remove $dir"
+            fi
+        elif [[ "$dir" == *"*"* ]]; then
+            # Handle wildcard patterns
+            log_debug "Checking wildcard pattern: $dir"
+            if ls $dir >/dev/null 2>&1; then
+                if rm -rf $dir 2>/dev/null; then
+                    log_success "  ✅ $dir pattern removed"
+                    ((removed_count++))
+                else
+                    log_error "  ❌ Failed to remove $dir pattern"
+                fi
+            else
+                log_debug "  No matches for pattern $dir"
+            fi
         else
-            log_info "  ℹ️  $dir not found"
+            log_debug "  $dir not found"
         fi
     done
 
