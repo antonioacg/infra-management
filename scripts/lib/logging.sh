@@ -89,37 +89,37 @@ log_error() {
 
 log_warning() {
     if [[ $(_get_log_level_number) -ge 2 ]]; then
-        echo -e "$(_get_timestamp)${YELLOW}$1${NC}"
+        echo -e "$(_get_timestamp)${YELLOW}$1${NC}" >&2
     fi
 }
 
 log_info() {
     if [[ $(_get_log_level_number) -ge 3 ]]; then
-        echo -e "$(_get_timestamp)${BLUE}$1${NC}"
+        echo -e "$(_get_timestamp)${BLUE}$1${NC}" >&2
     fi
 }
 
 log_success() {
     if [[ $(_get_log_level_number) -ge 3 ]]; then
-        echo -e "$(_get_timestamp)${GREEN}$1${NC}"
+        echo -e "$(_get_timestamp)${GREEN}$1${NC}" >&2
     fi
 }
 
 log_phase() {
     if [[ $(_get_log_level_number) -ge 3 ]]; then
-        echo -e "$(_get_timestamp)${CYAN}$1${NC}"
+        echo -e "$(_get_timestamp)${CYAN}$1${NC}" >&2
     fi
 }
 
 log_debug() {
     if [[ $(_get_log_level_number) -ge 4 ]]; then
-        echo -e "$(_get_timestamp)${CYAN}DEBUG: $1${NC}"
+        echo -e "$(_get_timestamp)${CYAN}DEBUG: $1${NC}" >&2
     fi
 }
 
 log_trace() {
     if [[ $(_get_log_level_number) -ge 5 ]]; then
-        echo -e "$(_get_timestamp)${GRAY}TRACE: $1${NC}"
+        echo -e "$(_get_timestamp)${GRAY}TRACE: $1${NC}" >&2
     fi
 }
 
