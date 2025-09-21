@@ -3,11 +3,18 @@ set -e
 
 # Enterprise-Ready Homelab Remote Bootstrap v3.0
 # Single-command remote deployment with complete automation
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s homelab
+# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/remote-bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 
-# Load centralized logging library
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
-smart_import "infra-management/scripts/lib/logging.sh"
+# Load centralized logging library with DEV_MODE support
+if [[ "${DEV_MODE:-false}" == "true" ]]; then
+    # Development mode: use relative path
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    source "${SCRIPT_DIR}/scripts/lib/logging.sh"
+else
+    # Production mode: use remote URL
+    eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+    smart_import "infra-management/scripts/lib/logging.sh"
+fi
 
 # Parse command line arguments for enterprise scaling
 NODE_COUNT=1
@@ -170,8 +177,8 @@ execute_bootstrap() {
     # Ensure the bootstrap script is executable
     chmod +x scripts/bootstrap.sh
 
-    # Execute the main bootstrap with proper environment
-    GITHUB_TOKEN="$GITHUB_TOKEN" ./scripts/bootstrap.sh "$ENVIRONMENT"
+    # Execute the main bootstrap with proper resource parameters
+    GITHUB_TOKEN="$GITHUB_TOKEN" ./scripts/bootstrap.sh --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"
 }
 
 cleanup_on_error() {
@@ -184,13 +191,12 @@ cleanup_on_error() {
         echo
         echo "Debugging information:"
         echo "  • Workspace: $WORK_DIR"
-        echo "  • Environment: $ENVIRONMENT"
-        echo "  • Architecture: $DETECTED_OS/$DETECTED_ARCH"
+        echo "  • Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
         echo "  • Failed phase: $(get_current_phase)"
         echo
         echo "Recovery options:"
         echo "  1. Inspect logs: find $WORK_DIR -name '*.log' -type f"
-        echo "  2. Manual retry: cd $WORK_DIR/infra-management && GITHUB_TOKEN=\"\$GITHUB_TOKEN\" ./scripts/bootstrap.sh $ENVIRONMENT"
+        echo "  2. Manual retry: cd $WORK_DIR/infra-management && GITHUB_TOKEN=\"\$GITHUB_TOKEN\" ./scripts/bootstrap.sh --nodes=$NODE_COUNT --tier=$RESOURCE_TIER"
         echo "  3. Clean retry: rm -rf $WORK_DIR && curl ... (run bootstrap again)"
         echo
         log_info "Workspace preserved for debugging: $WORK_DIR"
@@ -233,7 +239,7 @@ print_success_message() {
     echo "╔════════════════════════════════════════════════════════════╗"
     echo "║                   🎉 BOOTSTRAP COMPLETE!                  ║"
     echo "╠════════════════════════════════════════════════════════════╣"
-    echo "║  Environment: $ENVIRONMENT                                  ║"
+    echo "║  Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier                                  ║"
     echo "║  Workspace: $WORK_DIR                        ║"
     echo "║                                                            ║"
     echo "║  Next steps:                                               ║"
