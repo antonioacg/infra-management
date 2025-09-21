@@ -135,17 +135,25 @@ print_banner() {
     for ((i=0; i<$((BANNER_WIDTH - 2)); i++)); do printf "═"; done
     printf "╗\n"
 
-    # Estimate display width (accounts for common emojis)
+    # Robust emoji width calculation using actual byte analysis
     _get_display_width() {
         local text="$1"
         local char_count=${#text}
 
-        # Count emoji-like characters (rough heuristic)
-        local emoji_count=$(echo -n "$text" | grep -o '[🎯🔧🚀✅❌⚠️ℹ️🧹🎉📋📁🛠️🔍💡📚🏗️🔄]' | wc -l 2>/dev/null || echo 0)
+        # Count actual UTF-8 sequences that are emojis
+        # Most emojis are multi-byte, count each multi-byte sequence as +1 display width
+        local byte_count=$(printf '%s' "$text" | wc -c)
 
-        # Assume most emojis take 2 display columns but count as 1 character
-        # So add 1 extra for each emoji to get approximate display width
-        echo $((char_count + emoji_count))
+        # Simple and reliable emoji width adjustment
+        local extra_bytes=$((byte_count - char_count))
+        local emoji_adjustment=0
+
+        if [[ $extra_bytes -gt 0 ]]; then
+            # Simple, conservative emoji width adjustment
+            emoji_adjustment=$((extra_bytes / 4))
+        fi
+
+        echo $((char_count + emoji_adjustment))
     }
 
     # Center the title
