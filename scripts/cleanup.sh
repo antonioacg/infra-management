@@ -108,6 +108,50 @@ cleanup_kubectl_config() {
 
     if [[ $cleaned_count -gt 0 ]]; then
         log_success "kubectl config cleanup complete ($cleaned_count contexts removed)"
+
+        # Validate and fix current-context after removing contexts
+        local current_context
+        current_context=$(kubectl config current-context 2>/dev/null || echo "")
+
+        if [[ -n "$current_context" ]]; then
+            # Check if current context actually exists
+            if ! kubectl config get-contexts "$current_context" >/dev/null 2>&1; then
+                log_warning "Current context '$current_context' is invalid, resetting..."
+
+                # Find first available context that's not k3s-related
+                local fallback_context
+                fallback_context=$(kubectl config get-contexts -o name 2>/dev/null | grep -v '^k3s-default' | head -1)
+
+                if [[ -n "$fallback_context" ]]; then
+                    kubectl config use-context "$fallback_context" >/dev/null 2>&1
+                    log_success "  ✅ Reset current context to: $fallback_context"
+                else
+                    log_warning "  ⚠️  No valid non-k3s contexts remaining"
+                    # Remove kubeconfig file if no contexts left
+                    if [[ -f ~/.kube/config ]]; then
+                        rm ~/.kube/config
+                        log_success "  ✅ Removed empty kubeconfig file"
+                    fi
+                fi
+            fi
+        fi
+
+        # Check if any contexts remain at all
+        local remaining_contexts
+        remaining_contexts=$(kubectl config get-contexts -o name 2>/dev/null | wc -l)
+
+        if [[ "$remaining_contexts" -eq 0 ]]; then
+            log_warning "No contexts remaining in kubeconfig"
+            if [[ -f ~/.kube/config ]]; then
+                rm ~/.kube/config
+                log_success "  ✅ Removed empty kubeconfig file"
+            fi
+        else
+            # Validate kubeconfig integrity
+            if ! kubectl config view >/dev/null 2>&1; then
+                log_warning "kubeconfig file validation failed - may need manual intervention"
+            fi
+        fi
     else
         log_debug "No contexts were removed"
     fi

@@ -128,56 +128,6 @@ detect_architecture() {
     export DETECTED_OS="$OS"
 }
 
-setup_kubectl_config() {
-    log_info "[Phase 1b] Configuring kubectl for k3s cluster..."
-
-    mkdir -p ~/.kube
-
-    if [[ -f ~/.kube/config ]]; then
-        # Copy k3s config to temp file
-        sudo cp /etc/rancher/k3s/k3s.yaml /tmp/k3s-temp.yaml
-        sudo chown $USER:$USER /tmp/k3s-temp.yaml
-
-        # Find available context name (k3s-default, k3s-default-2, etc.)
-        local context_name="k3s-default"
-        local counter=2
-        while kubectl config get-contexts "$context_name" >/dev/null 2>&1; do
-            context_name="k3s-default-$counter"
-            ((counter++))
-        done
-
-        # Rename context, cluster, and user in temp file to avoid conflicts
-        local cluster_name="${context_name}-cluster"
-        local user_name="${context_name}-user"
-
-        KUBECONFIG=/tmp/k3s-temp.yaml kubectl config rename-context default "$context_name"
-        KUBECONFIG=/tmp/k3s-temp.yaml kubectl config set-context "$context_name" --cluster="$cluster_name" --user="$user_name"
-
-        # Rename cluster and user in the temp config using more specific patterns
-        # Replace cluster name (under clusters section)
-        sed -i '/^clusters:/,/^contexts:/ { /^  name: default$/ s/default/'"$cluster_name"'/ }' /tmp/k3s-temp.yaml
-        # Replace user name (under users section)
-        sed -i '/^users:/,$ { /^- name: default$/ s/default/'"$user_name"'/ }' /tmp/k3s-temp.yaml
-
-        # Merge configs safely
-        KUBECONFIG=~/.kube/config:/tmp/k3s-temp.yaml kubectl config view --flatten > ~/.kube/config.tmp
-        mv ~/.kube/config.tmp ~/.kube/config
-
-        # Set k3s as current context
-        kubectl config use-context "$context_name"
-
-        # Cleanup temp file
-        rm /tmp/k3s-temp.yaml
-
-        log_success "[Phase 1b] ✅ Merged k3s cluster as '$context_name' context"
-    else
-        # No existing config, copy k3s config directly
-        sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-        sudo chown $USER:$USER ~/.kube/config
-        log_success "[Phase 1b] ✅ Created kubectl config with k3s cluster"
-    fi
-}
-
 
 install_k3s() {
     log_info "[Phase 1b] Installing k3s cluster..."
@@ -195,29 +145,42 @@ install_k3s() {
     else
         log_info "[Phase 1b] Installing k3s with resource tier: $RESOURCE_TIER"
 
+        # Detect available context name BEFORE k3s install to avoid conflicts
+        local context_name="k3s-default"
+        local counter=2
+
+        # Only check for conflicts if kubectl exists and has config
+        if command -v kubectl >/dev/null 2>&1 && [[ -f ~/.kube/config ]]; then
+            while kubectl config get-contexts "$context_name" >/dev/null 2>&1; do
+                context_name="k3s-default-$counter"
+                ((counter++))
+            done
+            log_info "[Phase 1b] Using context name: $context_name (avoiding conflicts)"
+        else
+            log_info "[Phase 1b] Using context name: $context_name (no existing config)"
+        fi
+
         # Configure k3s based on resource tier and node count
-        local k3s_args=""
+        local k3s_args="--write-kubeconfig-context=$context_name"
         if [[ "$RESOURCE_TIER" == "medium" ]] || [[ "$RESOURCE_TIER" == "large" ]] || [[ "$NODE_COUNT" -gt 1 ]]; then
             # HA-ready configuration for multi-node
-            k3s_args="--cluster-init"
+            k3s_args="$k3s_args --cluster-init"
             log_info "[Phase 1b] Configuring for HA (multi-node ready)"
         else
             # Single node configuration
             log_info "[Phase 1b] Configuring for single node"
         fi
 
-        # Install k3s with proper configuration
+        # Install k3s with proper context configuration
         curl -sfL https://get.k3s.io | sh -s - server \
             $k3s_args \
             --disable traefik \
             --disable servicelb \
             --write-kubeconfig-mode 644
 
-        log_info "[Phase 1b] k3s installation completed, waiting for readiness..."
+        log_info "[Phase 1b] k3s installation completed with context: $context_name"
+        log_success "[Phase 1b] ✅ kubectl context '$context_name' created automatically"
     fi
-
-    # Configure kubectl to use k3s cluster (merge with existing config)
-    setup_kubectl_config
 
     # Wait for k3s to be ready
     local retry_count=0
