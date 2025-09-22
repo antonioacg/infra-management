@@ -124,10 +124,6 @@ setup_kubectl_config() {
     mkdir -p ~/.kube
 
     if [[ -f ~/.kube/config ]]; then
-        # Backup existing config
-        cp ~/.kube/config ~/.kube/config.backup.$(date +%s)
-        log_info "[Phase 1b] Backed up existing kubectl config"
-
         # Copy and rename k3s config to avoid conflicts
         sudo cp /etc/rancher/k3s/k3s.yaml /tmp/k3s-renamed.yaml
         sudo chown $USER:$USER /tmp/k3s-renamed.yaml
