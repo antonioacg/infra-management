@@ -33,6 +33,58 @@ confirm_cleanup() {
     fi
 }
 
+cleanup_kubectl_config() {
+    log_info "Cleaning up kubectl config..."
+
+    # Only clean up if kubectl and config exist
+    if ! command -v kubectl >/dev/null 2>&1 || [[ ! -f ~/.kube/config ]]; then
+        log_debug "kubectl or config not found, skipping kubectl config cleanup"
+        return
+    fi
+
+    # Get current context
+    local current_context
+    current_context=$(kubectl config current-context 2>/dev/null || echo "")
+
+    if [[ -n "$current_context" && "$current_context" =~ ^k3s-default ]]; then
+        log_debug "Cleaning up k3s context: $current_context"
+
+        # Get cluster and user for this context
+        local cluster user
+        cluster=$(kubectl config view -o jsonpath="{.contexts[?(@.name=='$current_context')].context.cluster}" 2>/dev/null || echo "")
+        user=$(kubectl config view -o jsonpath="{.contexts[?(@.name=='$current_context')].context.user}" 2>/dev/null || echo "")
+
+        # Remove context
+        if kubectl config delete-context "$current_context" >/dev/null 2>&1; then
+            log_success "  ✅ Removed context: $current_context"
+        else
+            log_debug "  Context $current_context not found or already removed"
+        fi
+
+        # Remove cluster if it's k3s-related
+        if [[ -n "$cluster" && "$cluster" =~ k3s-default ]]; then
+            if kubectl config delete-cluster "$cluster" >/dev/null 2>&1; then
+                log_success "  ✅ Removed cluster: $cluster"
+            else
+                log_debug "  Cluster $cluster not found or already removed"
+            fi
+        fi
+
+        # Remove user if it's k3s-related
+        if [[ -n "$user" && "$user" =~ k3s-default ]]; then
+            if kubectl config delete-user "$user" >/dev/null 2>&1; then
+                log_success "  ✅ Removed user: $user"
+            else
+                log_debug "  User $user not found or already removed"
+            fi
+        fi
+
+        log_success "kubectl config cleanup complete"
+    else
+        log_debug "Current context '$current_context' is not k3s-related, skipping cleanup"
+    fi
+}
+
 cleanup_k3s() {
     log_info "Removing k3s cluster..."
 
@@ -222,6 +274,7 @@ main() {
     log_info "Starting cleanup process..."
 
     cleanup_processes
+    cleanup_kubectl_config
     cleanup_k3s
     cleanup_tools
     cleanup_directories
