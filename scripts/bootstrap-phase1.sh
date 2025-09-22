@@ -3,10 +3,10 @@ set -e
 
 # Enterprise-Ready Platform Bootstrap - Phase 1 Testing
 # Tests ONLY: k3s cluster + MinIO + PostgreSQL bootstrap storage with LOCAL state
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small [--skip-validation]
+# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small [--skip-validation]
 
 # Load import utility and logging library (bash 3.2+ compatible)
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
 
 # Parse command line arguments for enterprise scaling
@@ -63,7 +63,7 @@ validate_environment() {
         log_error "[Phase 1a] ❌ GITHUB_TOKEN environment variable required"
         log_info ""
         log_info "Usage:"
-        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
+        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
         log_info ""
         log_info "Parameters:"
         log_info "  --nodes=N           Number of nodes (default: 1)"
@@ -286,7 +286,7 @@ prepare_terraform_workspace() {
         log_info "[Phase 1c] Downloading Terraform files from GitHub..."
 
         # Download bootstrap-state files using terraform init -from-module
-        if ! terraform init -from-module="git::https://${GITHUB_TOKEN}@github.com/${GITHUB_ORG}/infra-management.git//bootstrap-state?ref=main"; then
+        if ! terraform init -from-module="git::https://${GITHUB_TOKEN}@github.com/${GITHUB_ORG}/infra-management.git//bootstrap-state?ref=${GIT_REF:-main}"; then
             log_error "[Phase 1c] Failed to download Terraform files from GitHub"
             log_info "[Phase 1c] Check GITHUB_TOKEN and repository access"
             exit 1

@@ -3,10 +3,10 @@ set -e
 
 # Enterprise-Ready Platform Bootstrap - Phase 0 Testing
 # Tests ONLY: environment validation, architecture detection, and tool installation
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
 
 # Load import utility and logging library (bash 3.2+ compatible)
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
 
 # Parse command line arguments for enterprise scaling
@@ -43,7 +43,7 @@ validate_environment() {
         log_error "[Phase 0a] ❌ GITHUB_TOKEN environment variable required"
         log_info ""
         log_info "Usage:"
-        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/bootstrap-phase0.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
+        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
         log_info ""
         log_info "Parameters:"
         log_info "  --nodes=N     Number of nodes (default: 1)"
@@ -184,7 +184,7 @@ cleanup_on_error() {
         log_info ""
         log_info "🔧 Recovery options:"
         log_info "  1. Check logs above for specific error details"
-        log_info "  2. Run cleanup: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/cleanup.sh | bash -s --force"
+        log_info "  2. Run cleanup: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s --force"
         log_info "  3. Retry Phase 0: curl ... (run this script again)"
         log_info ""
         exit $exit_code
@@ -219,7 +219,7 @@ print_success_message() {
     log_info "[Phase 0]   • No workspace created (tools validated only)"
     log_info ""
     log_info "[Phase 0] 🚀 To run full bootstrap (Phase 1-5):"
-    log_info "[Phase 0]   curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s --nodes=${NODE_COUNT} --tier=${RESOURCE_TIER}"
+    log_info "[Phase 0]   curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s --nodes=${NODE_COUNT} --tier=${RESOURCE_TIER}"
     log_info ""
 }
 

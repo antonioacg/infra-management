@@ -3,7 +3,7 @@
 #
 # Usage in scripts:
 #   # Import this utility first (bash 3.2+ compatible)
-#   eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+#   eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 #
 #   # Then import any library
 #   smart_import "infra-management/scripts/lib/logging.sh"
@@ -66,7 +66,7 @@ smart_import() {
         source "$local_path"
     else
         # Production: use remote GitHub URL
-        local remote_url="https://raw.githubusercontent.com/${GITHUB_ORG}/${repo_name}/main/${lib_path#*/}"
+        local remote_url="https://raw.githubusercontent.com/${GITHUB_ORG}/${repo_name}/${GIT_REF:-main}/${lib_path#*/}"
 
         [[ "${DEBUG_IMPORTS:-false}" == "true" ]] && echo "DEBUG: Importing remote: $remote_url" >&2
         eval "$(curl -sfL "$remote_url")"

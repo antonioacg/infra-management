@@ -3,10 +3,10 @@ set -e
 
 # Enterprise-Ready Platform Bootstrap v3.0
 # Single-command deployment with complete automation
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
+# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 
 # Load centralized logging library
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
 
 # Parse command line arguments for enterprise scaling
@@ -45,7 +45,7 @@ validate_token() {
         log_error "GITHUB_TOKEN environment variable required"
         echo
         echo "Usage:"
-        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- --nodes=N --tier=SIZE"
+        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- --nodes=N --tier=SIZE"
         echo
         echo "Get token at: https://github.com/settings/tokens"
         echo "Required scopes: repo, workflow"
@@ -63,7 +63,7 @@ run_phase_0() {
 
     # Use our perfected Phase 0 script
     log_info "Executing Phase 0 script..."
-    if curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/main/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="$GITHUB_TOKEN" bash -s -- --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
+    if curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="$GITHUB_TOKEN" bash -s -- --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 0 completed successfully"
     else
         log_error "Phase 0 failed"

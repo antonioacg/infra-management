@@ -4,12 +4,12 @@
 
 # Enterprise Homelab Cleanup Script
 # Completely removes all bootstrap components and tools for fresh start
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s [--force]
+# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s [--force]
 
 # Load import utility and logging library (bash 3.2+ compatible)
 # Propagate LOG_LEVEL from environment if not set
 export LOG_LEVEL="${LOG_LEVEL:-INFO}"
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/imports.sh)"
+eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
 
 log_debug "Cleanup script starting with LOG_LEVEL=$LOG_LEVEL"
@@ -352,7 +352,7 @@ case "${1:-}" in
         echo
         echo "Usage:"
         echo "  $0 [OPTIONS]"
-        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s [--force]"
+        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s [--force]"
         echo
         echo "Options:"
         echo "  --force      Skip confirmation prompt"
@@ -361,10 +361,10 @@ case "${1:-}" in
         echo
         echo "Examples:"
         echo "  # Interactive cleanup with confirmation"
-        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash"
+        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash"
         echo
         echo "  # Force cleanup without confirmation"
-        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s --force"
+        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s --force"
         echo
         echo "This script completely removes all bootstrap components:"
         echo "  • k3s cluster and all Kubernetes resources"

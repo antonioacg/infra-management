@@ -1,7 +1,6 @@
 #!/bin/bash
 # Enterprise Platform Logging Library
 # Centralized logging functions for consistent output across all scripts
-# Usage: source <(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/lib/logging.sh)
 #
 # Banner/Box Configuration:
 # - Default width: 120 characters
