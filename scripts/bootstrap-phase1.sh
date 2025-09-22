@@ -38,7 +38,17 @@ done
 
 # Configuration
 GITHUB_ORG="antonioacg"
-BOOTSTRAP_STATE_DIR="$PWD/bootstrap-state"
+
+# Bootstrap directory for local vs remote usage
+if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
+    # Local development: bootstrap-state is sibling to scripts/
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    BOOTSTRAP_STATE_DIR="$(dirname "$SCRIPT_DIR")/bootstrap-state"
+else
+    # Remote usage: create temp directory for terraform init -from-module
+    BOOTSTRAP_STATE_DIR="/tmp/phase1-terraform-$$"
+    mkdir -p "$BOOTSTRAP_STATE_DIR"
+fi
 
 validate_environment() {
     if [[ "$SKIP_VALIDATION" == "true" ]]; then
@@ -254,22 +264,36 @@ validate_cluster() {
 prepare_terraform_workspace() {
     log_info "[Phase 1c] Preparing Terraform workspace..."
 
-    # Ensure we're in the right directory structure
-    if [[ ! -d "$BOOTSTRAP_STATE_DIR" ]]; then
-        log_error "[Phase 1c] Bootstrap state directory not found: $BOOTSTRAP_STATE_DIR"
-        log_info "[Phase 1c] Expected structure: infra-management/bootstrap-state/"
-        exit 1
+    if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
+        # Local development: verify bootstrap-state directory exists
+        if [[ ! -d "$BOOTSTRAP_STATE_DIR" ]]; then
+            log_error "[Phase 1c] Bootstrap state directory not found: $BOOTSTRAP_STATE_DIR"
+            log_info "[Phase 1c] Expected structure: infra-management/bootstrap-state/"
+            exit 1
+        fi
+
+        cd "$BOOTSTRAP_STATE_DIR"
+
+        if [[ ! -f "main.tf" ]]; then
+            log_error "[Phase 1c] main.tf not found in $BOOTSTRAP_STATE_DIR"
+            exit 1
+        fi
+        log_success "[Phase 1c] ✅ Using local Terraform files: $(pwd)"
+    else
+        # Remote usage: use terraform init -from-module to download files
+        cd "$BOOTSTRAP_STATE_DIR"
+
+        log_info "[Phase 1c] Downloading Terraform files from GitHub..."
+
+        # Download bootstrap-state files using terraform init -from-module
+        if ! terraform init -from-module="git::https://${GITHUB_TOKEN}@github.com/${GITHUB_ORG}/infra-management.git//bootstrap-state?ref=main"; then
+            log_error "[Phase 1c] Failed to download Terraform files from GitHub"
+            log_info "[Phase 1c] Check GITHUB_TOKEN and repository access"
+            exit 1
+        fi
+
+        log_success "[Phase 1c] ✅ Downloaded Terraform files: $(pwd)"
     fi
-
-    cd "$BOOTSTRAP_STATE_DIR"
-
-    # Verify Terraform files exist
-    if [[ ! -f "main.tf" ]]; then
-        log_error "[Phase 1c] main.tf not found in $BOOTSTRAP_STATE_DIR"
-        exit 1
-    fi
-
-    log_success "[Phase 1c] ✅ Terraform workspace ready: $(pwd)"
 }
 
 deploy_bootstrap_storage() {
@@ -354,6 +378,12 @@ cleanup_on_error() {
     local exit_code=$?
     local line_number=$1
 
+    # Clean up temporary directory in remote mode
+    if [[ "${USE_LOCAL_IMPORTS:-false}" != "true" && -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
+        log_info "[Phase 1] Cleaning up temporary directory: $BOOTSTRAP_STATE_DIR"
+        rm -rf "$BOOTSTRAP_STATE_DIR"
+    fi
+
     if [[ $exit_code -ne 0 ]]; then
         log_info ""
         log_error "[Phase 1] ❌ Bootstrap foundation failed at line $line_number with exit code $exit_code"
@@ -435,6 +465,12 @@ main() {
 
     log_phase "🚀 Phase 1: Complete!"
     print_success_message
+
+    # Clean up temporary directory in remote mode
+    if [[ "${USE_LOCAL_IMPORTS:-false}" != "true" && -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
+        log_info "[Phase 1] Cleaning up temporary directory: $BOOTSTRAP_STATE_DIR"
+        rm -rf "$BOOTSTRAP_STATE_DIR"
+    fi
 }
 
 # Execute main function with all arguments
