@@ -217,8 +217,9 @@ validate_cluster() {
     # Check cluster access
     kubectl cluster-info >/dev/null
 
-    # Check storage class
-    kubectl get storageclass local-path >/dev/null
+    # Wait for local-path storage class to be created
+    log_info "[Phase 1b] Waiting for local-path storage class..."
+    kubectl wait --for=create storageclass/local-path --timeout=60s
 
     # Wait for system pods
     kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=120s
