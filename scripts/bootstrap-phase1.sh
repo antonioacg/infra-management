@@ -118,6 +118,43 @@ detect_architecture() {
     export DETECTED_OS="$OS"
 }
 
+setup_kubectl_config() {
+    log_info "[Phase 1b] Configuring kubectl for k3s cluster..."
+
+    mkdir -p ~/.kube
+
+    if [[ -f ~/.kube/config ]]; then
+        # Backup existing config
+        cp ~/.kube/config ~/.kube/config.backup.$(date +%s)
+        log_info "[Phase 1b] Backed up existing kubectl config"
+
+        # Copy and rename k3s config to avoid conflicts
+        sudo cp /etc/rancher/k3s/k3s.yaml /tmp/k3s-renamed.yaml
+        sudo chown $USER:$USER /tmp/k3s-renamed.yaml
+
+        # Rename contexts BEFORE merging to avoid conflicts
+        KUBECONFIG=/tmp/k3s-renamed.yaml kubectl config rename-context default k3s-default
+
+        # Merge configs safely
+        KUBECONFIG=~/.kube/config:/tmp/k3s-renamed.yaml kubectl config view --flatten > ~/.kube/config.tmp
+        mv ~/.kube/config.tmp ~/.kube/config
+
+        # Set k3s as current context
+        kubectl config use-context k3s-default
+
+        # Cleanup temp file
+        rm /tmp/k3s-renamed.yaml
+
+        log_success "[Phase 1b] ✅ Merged k3s cluster as 'k3s-default' context"
+    else
+        # No existing config, copy k3s config directly
+        sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+        sudo chown $USER:$USER ~/.kube/config
+        log_success "[Phase 1b] ✅ Created kubectl config with k3s cluster"
+    fi
+}
+
+
 install_k3s() {
     log_info "[Phase 1b] Installing k3s cluster..."
 
@@ -154,6 +191,9 @@ install_k3s() {
 
         log_info "[Phase 1b] k3s installation completed, waiting for readiness..."
     fi
+
+    # Configure kubectl to use k3s cluster (merge with existing config)
+    setup_kubectl_config
 
     # Wait for k3s to be ready
     local retry_count=0

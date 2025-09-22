@@ -87,6 +87,18 @@ cleanup_tools() {
     log_success "Removed $removed_count tools"
 }
 
+cleanup_kubectl_config() {
+    log_info "Cleaning up kubectl configuration..."
+
+    # Remove only k3s-specific context (leave other configs intact)
+    if kubectl config get-contexts k3s-default >/dev/null 2>&1; then
+        kubectl config delete-context k3s-default 2>/dev/null || true
+        log_success "  ✅ Removed k3s-default context"
+    fi
+
+    log_success "kubectl configuration cleaned up"
+}
+
 cleanup_directories() {
     log_info "Removing bootstrap directories..."
 
@@ -222,6 +234,7 @@ main() {
 
     cleanup_processes
     cleanup_k3s
+    cleanup_kubectl_config
     cleanup_tools
     cleanup_directories
 
