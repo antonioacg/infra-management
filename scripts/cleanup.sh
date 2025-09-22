@@ -34,6 +34,7 @@ confirm_cleanup() {
 }
 
 cleanup_kubectl_config() {
+    local specified_contexts="$1"
     log_info "Cleaning up kubectl config..."
 
     # Only clean up if kubectl and config exist
@@ -42,26 +43,51 @@ cleanup_kubectl_config() {
         return
     fi
 
-    # Get current context
-    local current_context
-    current_context=$(kubectl config current-context 2>/dev/null || echo "")
+    local contexts_to_clean=""
 
-    if [[ -n "$current_context" && "$current_context" =~ ^k3s-default ]]; then
-        log_debug "Cleaning up k3s context: $current_context"
+    if [[ -n "$specified_contexts" ]]; then
+        # Use specified contexts (comma-separated)
+        contexts_to_clean=$(echo "$specified_contexts" | tr ',' '\n')
+        log_debug "Using specified contexts: $specified_contexts"
+    else
+        # Find all k3s-related contexts (default behavior)
+        contexts_to_clean=$(kubectl config get-contexts -o name 2>/dev/null | grep -E '^k3s-default' || echo "")
+        log_debug "Auto-discovered k3s contexts"
+    fi
+
+    if [[ -z "$contexts_to_clean" ]]; then
+        log_debug "No contexts found to clean, skipping kubectl config cleanup"
+        return
+    fi
+
+    local cleaned_count=0
+
+    # Clean up each context
+    while IFS= read -r context; do
+        [[ -z "$context" ]] && continue
+
+        # Check if context actually exists
+        if ! kubectl config get-contexts "$context" >/dev/null 2>&1; then
+            log_debug "Context '$context' not found, skipping"
+            continue
+        fi
+
+        log_debug "Cleaning up context: $context"
 
         # Get cluster and user for this context
         local cluster user
-        cluster=$(kubectl config view -o jsonpath="{.contexts[?(@.name=='$current_context')].context.cluster}" 2>/dev/null || echo "")
-        user=$(kubectl config view -o jsonpath="{.contexts[?(@.name=='$current_context')].context.user}" 2>/dev/null || echo "")
+        cluster=$(kubectl config view -o jsonpath="{.contexts[?(@.name=='$context')].context.cluster}" 2>/dev/null || echo "")
+        user=$(kubectl config view -o jsonpath="{.contexts[?(@.name=='$context')].context.user}" 2>/dev/null || echo "")
 
         # Remove context
-        if kubectl config delete-context "$current_context" >/dev/null 2>&1; then
-            log_success "  ✅ Removed context: $current_context"
+        if kubectl config delete-context "$context" >/dev/null 2>&1; then
+            log_success "  ✅ Removed context: $context"
+            ((cleaned_count++))
         else
-            log_debug "  Context $current_context not found or already removed"
+            log_debug "  Context $context not found or already removed"
         fi
 
-        # Remove cluster if it's k3s-related
+        # Remove cluster if it has the same name pattern
         if [[ -n "$cluster" && "$cluster" =~ k3s-default ]]; then
             if kubectl config delete-cluster "$cluster" >/dev/null 2>&1; then
                 log_success "  ✅ Removed cluster: $cluster"
@@ -70,7 +96,7 @@ cleanup_kubectl_config() {
             fi
         fi
 
-        # Remove user if it's k3s-related
+        # Remove user if it has the same name pattern
         if [[ -n "$user" && "$user" =~ k3s-default ]]; then
             if kubectl config delete-user "$user" >/dev/null 2>&1; then
                 log_success "  ✅ Removed user: $user"
@@ -78,10 +104,12 @@ cleanup_kubectl_config() {
                 log_debug "  User $user not found or already removed"
             fi
         fi
+    done <<< "$contexts_to_clean"
 
-        log_success "kubectl config cleanup complete"
+    if [[ $cleaned_count -gt 0 ]]; then
+        log_success "kubectl config cleanup complete ($cleaned_count contexts removed)"
     else
-        log_debug "Current context '$current_context' is not k3s-related, skipping cleanup"
+        log_debug "No contexts were removed"
     fi
 }
 
@@ -269,17 +297,42 @@ print_success() {
 }
 
 main() {
+    # Parse arguments
+    local force_cleanup=false
+    local kubectl_contexts=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force)
+                force_cleanup=true
+                shift
+                ;;
+            --contexts=*)
+                kubectl_contexts="${1#*=}"
+                shift
+                ;;
+            *)
+                log_error "Unknown parameter: $1"
+                echo "Usage: $0 [--force] [--contexts=context1,context2,...]"
+                echo "  --force      Skip confirmation prompts"
+                echo "  --contexts   Comma-separated list of kubectl contexts to remove"
+                echo "               Default: automatically finds k3s-default* contexts"
+                exit 1
+                ;;
+        esac
+    done
+
     cleanup_banner
 
     # Skip confirmation if --force flag is provided
-    if [[ "$1" != "--force" ]]; then
+    if [[ "$force_cleanup" != "true" ]]; then
         confirm_cleanup
     fi
 
     log_info "Starting cleanup process..."
 
     cleanup_processes
-    cleanup_kubectl_config
+    cleanup_kubectl_config "$kubectl_contexts"
     cleanup_k3s
     cleanup_tools
     cleanup_directories
