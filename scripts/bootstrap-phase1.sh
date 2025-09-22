@@ -124,24 +124,32 @@ setup_kubectl_config() {
     mkdir -p ~/.kube
 
     if [[ -f ~/.kube/config ]]; then
-        # Copy and rename k3s config to avoid conflicts
-        sudo cp /etc/rancher/k3s/k3s.yaml /tmp/k3s-renamed.yaml
-        sudo chown $USER:$USER /tmp/k3s-renamed.yaml
+        # Copy k3s config to temp file
+        sudo cp /etc/rancher/k3s/k3s.yaml /tmp/k3s-temp.yaml
+        sudo chown $USER:$USER /tmp/k3s-temp.yaml
 
-        # Rename contexts BEFORE merging to avoid conflicts
-        KUBECONFIG=/tmp/k3s-renamed.yaml kubectl config rename-context default k3s-default
+        # Find available context name (k3s-default, k3s-default-2, etc.)
+        local context_name="k3s-default"
+        local counter=2
+        while kubectl config get-contexts "$context_name" >/dev/null 2>&1; do
+            context_name="k3s-default-$counter"
+            ((counter++))
+        done
+
+        # Rename context in temp file to avoid conflicts
+        KUBECONFIG=/tmp/k3s-temp.yaml kubectl config rename-context default "$context_name"
 
         # Merge configs safely
-        KUBECONFIG=~/.kube/config:/tmp/k3s-renamed.yaml kubectl config view --flatten > ~/.kube/config.tmp
+        KUBECONFIG=~/.kube/config:/tmp/k3s-temp.yaml kubectl config view --flatten > ~/.kube/config.tmp
         mv ~/.kube/config.tmp ~/.kube/config
 
         # Set k3s as current context
-        kubectl config use-context k3s-default
+        kubectl config use-context "$context_name"
 
         # Cleanup temp file
-        rm /tmp/k3s-renamed.yaml
+        rm /tmp/k3s-temp.yaml
 
-        log_success "[Phase 1b] ✅ Merged k3s cluster as 'k3s-default' context"
+        log_success "[Phase 1b] ✅ Merged k3s cluster as '$context_name' context"
     else
         # No existing config, copy k3s config directly
         sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
