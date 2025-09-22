@@ -146,10 +146,11 @@ setup_kubectl_config() {
         KUBECONFIG=/tmp/k3s-temp.yaml kubectl config rename-context default "$context_name"
         KUBECONFIG=/tmp/k3s-temp.yaml kubectl config set-context "$context_name" --cluster="$cluster_name" --user="$user_name"
 
-        # Rename cluster and user in the temp config
-        sed -i "s/name: default$/name: $cluster_name/" /tmp/k3s-temp.yaml
-        sed -i "s/cluster: default$/cluster: $cluster_name/" /tmp/k3s-temp.yaml
-        sed -i "s/user: default$/user: $user_name/" /tmp/k3s-temp.yaml
+        # Rename cluster and user in the temp config with more specific patterns
+        # Replace cluster name (under clusters section)
+        sed -i '/^clusters:/,/^contexts:/ { /^- name: default$/ s/default/'"$cluster_name"'/ }' /tmp/k3s-temp.yaml
+        # Replace user name (under users section)
+        sed -i '/^users:/,$ { /^- name: default$/ s/default/'"$user_name"'/ }' /tmp/k3s-temp.yaml
 
         # Merge configs safely
         KUBECONFIG=~/.kube/config:/tmp/k3s-temp.yaml kubectl config view --flatten > ~/.kube/config.tmp
