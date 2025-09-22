@@ -355,8 +355,9 @@ case "${1:-}" in
         echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/scripts/cleanup.sh | bash -s [--force]"
         echo
         echo "Options:"
-        echo "  --force    Skip confirmation prompt"
-        echo "  --help     Show this help message"
+        echo "  --force      Skip confirmation prompt"
+        echo "  --contexts   Comma-separated list of kubectl contexts to remove"
+        echo "  --help       Show this help message"
         echo
         echo "Examples:"
         echo "  # Interactive cleanup with confirmation"
@@ -372,15 +373,8 @@ case "${1:-}" in
         echo "  • All running port-forwards and background processes"
         exit 0
         ;;
-    --force)
-        main --force
-        ;;
-    "")
-        main
-        ;;
     *)
-        log_error "Unknown option: $1"
-        echo "Use --help for usage information"
-        exit 1
+        # Pass all arguments to main function for proper parsing
+        main "$@"
         ;;
 esac
