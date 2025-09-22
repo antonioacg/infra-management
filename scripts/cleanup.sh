@@ -122,14 +122,19 @@ cleanup_tools() {
     for tool in "${tools[@]}"; do
         if [[ -f "/usr/local/bin/$tool" ]]; then
             log_debug "Attempting to remove /usr/local/bin/$tool"
-            if sudo rm -f "/usr/local/bin/$tool"; then
-                log_success "  ✅ $tool removed"
-                ((removed_count++))
+            if sudo rm "/usr/local/bin/$tool" 2>/dev/null; then
+                # Verify it was actually removed
+                if [[ ! -f "/usr/local/bin/$tool" ]]; then
+                    log_success "  ✅ $tool removed"
+                    ((removed_count++))
+                else
+                    log_error "  ❌ Failed to remove $tool (still exists)"
+                fi
             else
                 log_error "  ❌ Failed to remove $tool"
             fi
         else
-            log_debug "  $tool not found"
+            log_debug "  $tool not found in /usr/local/bin"
         fi
     done
 
@@ -226,11 +231,11 @@ verify_cleanup() {
         log_success "  ✅ k3s removed"
     fi
 
-    # Check tools
+    # Check tools in /usr/local/bin (cleanup target)
     local tools=("kubectl" "terraform" "helm" "flux" "vault")
     for tool in "${tools[@]}"; do
-        if command -v "$tool" >/dev/null 2>&1; then
-            issues+=("$tool still present")
+        if [[ -f "/usr/local/bin/$tool" ]]; then
+            issues+=("$tool still present in /usr/local/bin")
         else
             log_success "  ✅ $tool removed"
         fi
