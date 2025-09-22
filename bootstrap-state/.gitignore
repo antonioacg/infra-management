@@ -1,7 +1,5 @@
 # Bootstrap credentials - never commit
 .minio-credentials
-backend.hcl
-backend-remote.hcl
 terraform-backend.auto.tfvars
 
 # Terraform files

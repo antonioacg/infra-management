@@ -5,13 +5,6 @@
 terraform {
   required_version = ">= 1.0"
 
-  # Backend configuration for remote state
-  # When migrating, use: terraform init -migrate-state -backend-config=backend-remote.hcl
-  backend "s3" {
-    # Configuration will be provided via backend config file
-    # This enables remote state migration
-  }
-
   required_providers {
     kubernetes = {
       source  = "hashicorp/kubernetes"
