@@ -355,7 +355,7 @@ verify_bootstrap_foundation() {
 
     # Wait for MinIO to be ready
     log_info "[Phase 1c] Waiting for MinIO to be ready..."
-    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=minio -n bootstrap --timeout=180s
+    kubectl wait --for=condition=Ready pod -l app=minio -n bootstrap --timeout=180s
 
     # Wait for PostgreSQL to be ready
     log_info "[Phase 1c] Waiting for PostgreSQL to be ready..."
