@@ -285,12 +285,36 @@ install_vault_cli() {
     log_success "Vault CLI ${VAULT_VERSION} installed"
 }
 
+# Install yq (YAML processor)
+install_yq() {
+    if command_exists yq; then
+        log_success "yq already installed ($(yq --version 2>/dev/null || echo 'version unknown'))"
+        return
+    fi
+
+    log_info "Installing yq"
+
+    local YQ_VERSION="v4.44.1"  # Latest stable version
+    local YQ_BINARY_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_${DETECTED_OS}_${DETECTED_ARCH}"
+
+    log_debug "Downloading from: $YQ_BINARY_URL"
+
+    # Download binary directly (yq is distributed as a single binary)
+    if download_with_retry "$YQ_BINARY_URL" "yq"; then
+        chmod +x yq
+        sudo mv yq /usr/local/bin/
+        log_success "yq ${YQ_VERSION} installed"
+    else
+        return 1
+    fi
+}
+
 
 # Verify installations
 verify_tools() {
     log_info "Verifying tool installations"
     
-    local tools=("kubectl" "flux" "helm" "terraform" "jq" "curl" "git")
+    local tools=("kubectl" "flux" "helm" "terraform" "yq" "jq" "curl" "git")
     local failed_tools=()
     
     for tool in "${tools[@]}"; do
@@ -301,6 +325,7 @@ verify_tools() {
                 flux) version=$(flux version --client 2>/dev/null | grep 'flux version' | cut -d' ' -f3 || echo "unknown") ;;
                 terraform) version=$(terraform version -json 2>/dev/null | jq -r .terraform_version || echo "unknown") ;;
                 vault) version=$(vault version 2>/dev/null | head -1 | cut -d' ' -f2 || echo "unknown") ;;
+                yq) version=$(yq --version 2>/dev/null | cut -d' ' -f4 || echo "unknown") ;;
                 *) version=$(${tool} --version 2>/dev/null | head -1 || echo "unknown") ;;
             esac
             log_success "$tool installed (${version})"
@@ -334,6 +359,7 @@ main() {
     install_helm
     install_flux
     install_terraform
+    install_yq
     install_vault_cli  # Optional
     
     echo ""

@@ -22,7 +22,7 @@ confirm_cleanup() {
     echo
     log_warning "This will completely remove:"
     echo "  • k3s cluster and all data"
-    echo "  • All installed tools (kubectl, terraform, helm, flux, vault)"
+    echo "  • All installed tools (kubectl, terraform, helm, flux, yq, vault)"
     echo "  • All bootstrap directories (~/homelab-bootstrap, ~/test-bootstrap)"
     echo "  • All running port-forwards and processes"
     echo
@@ -188,7 +188,7 @@ cleanup_k3s() {
 cleanup_tools() {
     log_info "Removing installed tools..."
 
-    local tools=("kubectl" "terraform" "helm" "flux" "vault" "mc")
+    local tools=("kubectl" "terraform" "helm" "flux" "yq" "vault" "mc")
     local removed_count=0
 
     for tool in "${tools[@]}"; do
@@ -304,7 +304,7 @@ verify_cleanup() {
     fi
 
     # Check tools in /usr/local/bin (cleanup target)
-    local tools=("kubectl" "terraform" "helm" "flux" "vault")
+    local tools=("kubectl" "terraform" "helm" "flux" "yq" "vault")
     for tool in "${tools[@]}"; do
         if [[ -f "/usr/local/bin/$tool" ]]; then
             issues+=("$tool still present in /usr/local/bin")
@@ -412,7 +412,7 @@ case "${1:-}" in
         echo
         echo "This script completely removes all bootstrap components:"
         echo "  • k3s cluster and all Kubernetes resources"
-        echo "  • All installed tools (kubectl, terraform, helm, flux, vault)"
+        echo "  • All installed tools (kubectl, terraform, helm, flux, yq, vault)"
         echo "  • All bootstrap directories and temporary files"
         echo "  • All running port-forwards and background processes"
         exit 0
