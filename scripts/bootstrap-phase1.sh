@@ -196,7 +196,7 @@ setup_kubectl_config() {
 
         # Rename cluster and user in the temp config with more specific patterns
         log_trace "[Phase 1b] Updating cluster name from 'default' to '$cluster_name'"
-        sed -i '/^clusters:/,/^contexts:/ { /^- name: default$/ s/default/'"$cluster_name"'/ }' /tmp/k3s-temp.yaml
+        sed -i '/^clusters:/,/^contexts:/ { /^  name: default$/s/default/'"$cluster_name"'/; }' /tmp/k3s-temp.yaml
 
         # Validate YAML structure after cluster rename
         log_trace "[Phase 1b] Validating YAML structure after cluster rename"
@@ -209,7 +209,7 @@ setup_kubectl_config() {
         }
 
         log_trace "[Phase 1b] Updating user name from 'default' to '$user_name'"
-        sed -i '/^users:/,$ { /^- name: default$/ s/default/'"$user_name"'/ }' /tmp/k3s-temp.yaml
+        sed -i '/^users:/,$ { /^- name: default$/s/default/'"$user_name"'/; }' /tmp/k3s-temp.yaml
 
         # Validate YAML structure after user rename
         log_trace "[Phase 1b] Validating YAML structure after user rename"
