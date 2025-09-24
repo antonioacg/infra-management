@@ -1,6 +1,6 @@
-# Bootstrap State Infrastructure
+# Bootstrap State Infrastructure - Phase 1 ONLY
 # Purpose: Minimal infrastructure for Terraform state backend
-# Creates: k3s + MinIO + PostgreSQL for state storage
+# Creates: k3s + MinIO + PostgreSQL ONLY - NO Vault (Phase 2)
 
 terraform {
   required_version = ">= 1.0"
@@ -128,93 +128,4 @@ resource "helm_release" "bootstrap_postgresql" {
   })]
 
   depends_on = [kubernetes_namespace.bootstrap]
-}
-# Vault namespace
-resource "kubernetes_namespace" "vault" {
-  metadata {
-    name = "vault"
-  }
-}
-
-# Vault deployment via Helm
-resource "helm_release" "vault" {
-  name       = "vault"
-  repository = "https://helm.releases.hashicorp.com"
-  chart      = "vault"
-  namespace  = "vault"
-  version    = "0.25.0"
-
-  create_namespace = false
-
-  values = [yamlencode({
-    global = {
-      enabled = true
-    }
-    server = {
-      image = {
-        repository = "hashicorp/vault"
-        tag        = "1.15.2"
-        pullPolicy = "IfNotPresent"
-      }
-      resources = {
-        requests = {
-          memory = "256Mi"
-          cpu    = "100m"
-        }
-        limits = {
-          memory = "512Mi"
-          cpu    = "500m"
-        }
-      }
-      readinessProbe = {
-        enabled = true
-        path    = "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
-      }
-      livenessProbe = {
-        enabled = true
-        path    = "/v1/sys/health?standbyok=true"
-        initialDelaySeconds = 60
-      }
-      extraEnvironmentVars = {
-        VAULT_ADDR = "http://127.0.0.1:8200"
-        VAULT_API_ADDR = "http://127.0.0.1:8200"
-      }
-      standalone = {
-        enabled = true
-        config = <<-EOT
-          ui = true
-          
-          listener "tcp" {
-            tls_disable = 1
-            address = "[::]:8200"
-            cluster_address = "[::]:8201"
-          }
-          
-          storage "file" {
-            path = "/vault/data"
-          }
-          
-          api_addr = "http://127.0.0.1:8200"
-          cluster_addr = "http://127.0.0.1:8201"
-          EOT
-      }
-      service = {
-        enabled = true
-        type = "ClusterIP"
-        port = 8200
-        targetPort = 8200
-      }
-      dataStorage = {
-        enabled = true
-        size = "1Gi"
-        storageClass = "local-path"
-      }
-    }
-    ui = {
-      enabled = true
-      serviceType = "ClusterIP"
-    }
-  })]
-
-  depends_on = [kubernetes_namespace.vault]
 }
