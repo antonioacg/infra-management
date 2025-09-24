@@ -128,57 +128,195 @@ detect_architecture() {
     export DETECTED_OS="$OS"
 }
 
+validate_kubectl_context() {
+    local expected_context="$1"
+    log_trace "[Phase 1b] Validating kubectl context setup..."
+
+    local current_context=$(kubectl config current-context 2>/dev/null || echo "NONE")
+    if [[ "$current_context" != "$expected_context" ]]; then
+        log_error "[Phase 1b] Context mismatch. Expected: $expected_context, Got: $current_context"
+        log_debug "[Phase 1b] Available contexts: $(kubectl config get-contexts -o name 2>/dev/null | tr '\n' ' ' || echo 'none')"
+        log_debug "[Phase 1b] Kubeconfig contents:"
+        log_debug "$(cat ~/.kube/config 2>/dev/null || echo 'No kubeconfig found')"
+        exit 1
+    fi
+
+    kubectl cluster-info >/dev/null 2>&1 || {
+        log_error "[Phase 1b] kubectl cluster access failed with context: $expected_context"
+        log_debug "[Phase 1b] kubectl cluster-info error: $(kubectl cluster-info 2>&1 || echo 'cluster-info failed')"
+        exit 1
+    }
+
+    log_success "[Phase 1b] ✅ kubectl context '$expected_context' verified and working"
+}
+
 setup_kubectl_config() {
     local context_name="$1"
     log_info "[Phase 1b] Setting up kubectl context: $context_name"
+    log_trace "[Phase 1b] Context setup started with target context: $context_name"
 
     mkdir -p ~/.kube
 
     if [[ -f ~/.kube/config ]]; then
+        log_debug "[Phase 1b] Existing kubeconfig found, merging with k3s config"
+        log_trace "[Phase 1b] Current contexts before merge:"
+        log_trace "$(kubectl config get-contexts 2>/dev/null || echo 'No contexts available')"
+
         # Merge k3s config with existing config using the predetermined context name
+        log_trace "[Phase 1b] Copying k3s config to temporary file"
         sudo cp /etc/rancher/k3s/k3s.yaml /tmp/k3s-temp.yaml
         sudo chown $USER:$USER /tmp/k3s-temp.yaml
+
+        # Validate initial k3s config
+        log_trace "[Phase 1b] Validating initial k3s configuration structure"
+        kubectl config view --kubeconfig=/tmp/k3s-temp.yaml >/dev/null || {
+            log_error "[Phase 1b] Initial k3s config is invalid"
+            rm -f /tmp/k3s-temp.yaml
+            exit 1
+        }
 
         # Rename context, cluster, and user in temp file
         local cluster_name="${context_name}-cluster"
         local user_name="${context_name}-user"
+        log_debug "[Phase 1b] Target names - Context: $context_name, Cluster: $cluster_name, User: $user_name"
 
-        KUBECONFIG=/tmp/k3s-temp.yaml kubectl config rename-context default "$context_name"
-        KUBECONFIG=/tmp/k3s-temp.yaml kubectl config set-context "$context_name" --cluster="$cluster_name" --user="$user_name"
+        log_trace "[Phase 1b] Renaming context 'default' to '$context_name'"
+        KUBECONFIG=/tmp/k3s-temp.yaml kubectl config rename-context default "$context_name" || {
+            log_error "[Phase 1b] Failed to rename context from 'default' to '$context_name'"
+            rm -f /tmp/k3s-temp.yaml
+            exit 1
+        }
+
+        log_trace "[Phase 1b] Updating context to use renamed cluster and user"
+        KUBECONFIG=/tmp/k3s-temp.yaml kubectl config set-context "$context_name" --cluster="$cluster_name" --user="$user_name" || {
+            log_error "[Phase 1b] Failed to update context settings"
+            rm -f /tmp/k3s-temp.yaml
+            exit 1
+        }
 
         # Rename cluster and user in the temp config with more specific patterns
-        # Replace cluster name (under clusters section)
+        log_trace "[Phase 1b] Updating cluster name from 'default' to '$cluster_name'"
         sed -i '/^clusters:/,/^contexts:/ { /^- name: default$/ s/default/'"$cluster_name"'/ }' /tmp/k3s-temp.yaml
-        # Replace user name (under users section)
+
+        # Validate YAML structure after cluster rename
+        log_trace "[Phase 1b] Validating YAML structure after cluster rename"
+        kubectl config view --kubeconfig=/tmp/k3s-temp.yaml >/dev/null || {
+            log_error "[Phase 1b] YAML corrupted after cluster rename operation"
+            log_debug "[Phase 1b] Corrupted config content:"
+            log_debug "$(cat /tmp/k3s-temp.yaml)"
+            rm -f /tmp/k3s-temp.yaml
+            exit 1
+        }
+
+        log_trace "[Phase 1b] Updating user name from 'default' to '$user_name'"
         sed -i '/^users:/,$ { /^- name: default$/ s/default/'"$user_name"'/ }' /tmp/k3s-temp.yaml
 
+        # Validate YAML structure after user rename
+        log_trace "[Phase 1b] Validating YAML structure after user rename"
+        kubectl config view --kubeconfig=/tmp/k3s-temp.yaml >/dev/null || {
+            log_error "[Phase 1b] YAML corrupted after user rename operation"
+            log_debug "[Phase 1b] Corrupted config content:"
+            log_debug "$(cat /tmp/k3s-temp.yaml)"
+            rm -f /tmp/k3s-temp.yaml
+            exit 1
+        }
+
+        log_trace "[Phase 1b] Temp config after all renames:"
+        log_trace "$(kubectl config view --kubeconfig=/tmp/k3s-temp.yaml)"
+
         # Merge configs safely
-        KUBECONFIG=~/.kube/config:/tmp/k3s-temp.yaml kubectl config view --flatten > ~/.kube/config.tmp
+        log_trace "[Phase 1b] Merging existing config with updated k3s config"
+        KUBECONFIG=~/.kube/config:/tmp/k3s-temp.yaml kubectl config view --flatten > ~/.kube/config.tmp || {
+            log_error "[Phase 1b] Failed to merge kubectl configurations"
+            rm -f /tmp/k3s-temp.yaml ~/.kube/config.tmp
+            exit 1
+        }
+
+        # Validate merged config before replacing
+        log_trace "[Phase 1b] Validating merged configuration"
+        kubectl config view --kubeconfig=~/.kube/config.tmp >/dev/null || {
+            log_error "[Phase 1b] Merged configuration is invalid"
+            log_debug "[Phase 1b] Invalid merged config content:"
+            log_debug "$(cat ~/.kube/config.tmp)"
+            rm -f /tmp/k3s-temp.yaml ~/.kube/config.tmp
+            exit 1
+        }
+
         mv ~/.kube/config.tmp ~/.kube/config
 
         # Set k3s as current context
-        kubectl config use-context "$context_name"
+        log_trace "[Phase 1b] Setting current context to '$context_name'"
+        kubectl config use-context "$context_name" || {
+            log_error "[Phase 1b] Failed to set current context to '$context_name'"
+            log_debug "[Phase 1b] Available contexts after merge:"
+            log_debug "$(kubectl config get-contexts 2>/dev/null || echo 'No contexts available')"
+            rm -f /tmp/k3s-temp.yaml
+            exit 1
+        }
 
         # Cleanup temp file
-        rm /tmp/k3s-temp.yaml
+        rm -f /tmp/k3s-temp.yaml
 
+        log_debug "[Phase 1b] Current context after setup: $(kubectl config current-context)"
         log_success "[Phase 1b] ✅ Merged k3s cluster as '$context_name' context"
     else
+        log_debug "[Phase 1b] No existing kubeconfig, creating new one from k3s config"
+
         # No existing config, copy k3s config directly
         sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
         sudo chown $USER:$USER ~/.kube/config
+
+        # Validate the direct copy
+        log_trace "[Phase 1b] Validating directly copied k3s config"
+        kubectl config view >/dev/null || {
+            log_error "[Phase 1b] Copied k3s config is invalid"
+            exit 1
+        }
+
+        # For direct copy, the context remains "default" from k3s
+        context_name="default"
+        log_debug "[Phase 1b] Using default context from k3s config: $context_name"
+
+        # Ensure the default context is actually set as current
+        kubectl config use-context "$context_name" || {
+            log_error "[Phase 1b] Failed to set current context to '$context_name'"
+            exit 1
+        }
+
         log_success "[Phase 1b] ✅ Created kubectl config with k3s cluster"
     fi
+
+    # Validate that kubectl is working with the configured context
+    validate_kubectl_context "$context_name"
+
+    log_trace "[Phase 1b] Final kubectl configuration:"
+    log_trace "$(kubectl config view)"
 }
 
 install_k3s() {
     log_info "[Phase 1b] Installing k3s cluster..."
 
+    # Detect available context name BEFORE any k3s operations to avoid conflicts
+    local context_name="k3s-default"
+    local counter=2
+    local k3s_already_installed=false
+
+    # Only check for conflicts if kubectl exists and has config
+    if command -v kubectl >/dev/null 2>&1 && [[ -f ~/.kube/config ]]; then
+        while kubectl config get-contexts "$context_name" >/dev/null 2>&1; do
+            context_name="k3s-default-$counter"
+            ((counter++))
+        done
+        log_debug "[Phase 1b] Context name selected: $context_name (avoiding conflicts)"
+    else
+        log_debug "[Phase 1b] Context name selected: $context_name (no existing config)"
+    fi
+
     if command -v k3s >/dev/null 2>&1; then
         log_info "[Phase 1b] k3s already installed, checking status..."
+        k3s_already_installed=true
         if sudo systemctl is-active --quiet k3s; then
             log_success "[Phase 1b] ✅ k3s already running"
-            return
         else
             log_info "[Phase 1b] k3s installed but not running, starting..."
             sudo systemctl start k3s
@@ -186,21 +324,6 @@ install_k3s() {
         fi
     else
         log_info "[Phase 1b] Installing k3s with resource tier: $RESOURCE_TIER"
-
-        # Detect available context name BEFORE k3s install to avoid conflicts
-        local context_name="k3s-default"
-        local counter=2
-
-        # Only check for conflicts if kubectl exists and has config
-        if command -v kubectl >/dev/null 2>&1 && [[ -f ~/.kube/config ]]; then
-            while kubectl config get-contexts "$context_name" >/dev/null 2>&1; do
-                context_name="k3s-default-$counter"
-                ((counter++))
-            done
-            log_info "[Phase 1b] Using context name: $context_name (avoiding conflicts)"
-        else
-            log_info "[Phase 1b] Using context name: $context_name (no existing config)"
-        fi
 
         # Configure k3s based on resource tier and node count
         local k3s_args=""
@@ -220,26 +343,43 @@ install_k3s() {
             --disable servicelb \
             --write-kubeconfig-mode 644
 
-        log_info "[Phase 1b] k3s installation completed, setting up context: $context_name"
-
-        # Configure kubectl context with the determined name
-        setup_kubectl_config "$context_name"
+        log_info "[Phase 1b] k3s installation completed"
     fi
 
-    # Wait for k3s to be ready
+    # Always ensure kubectl context is properly configured
+    log_info "[Phase 1b] Setting up kubectl context: $context_name"
+    setup_kubectl_config "$context_name"
+
+    # Wait for k3s to be ready with enhanced error reporting
+    log_trace "[Phase 1b] Starting k3s readiness check..."
     local retry_count=0
     local max_retries=30
+
     until kubectl get nodes >/dev/null 2>&1; do
         retry_count=$((retry_count + 1))
         if [[ $retry_count -ge $max_retries ]]; then
             log_error "[Phase 1b] k3s failed to become ready after ${max_retries} attempts"
+            log_debug "[Phase 1b] Final readiness check error:"
+            log_debug "$(kubectl get nodes 2>&1 || echo 'kubectl get nodes failed')"
+            log_debug "[Phase 1b] Current kubectl context: $(kubectl config current-context 2>/dev/null || echo 'No context')"
+            log_debug "[Phase 1b] k3s service status:"
+            log_debug "$(sudo systemctl status k3s --no-pager -l || echo 'systemctl status failed')"
             exit 1
         fi
+
+        if [[ $retry_count -eq 1 ]] || [[ $((retry_count % 5)) -eq 0 ]]; then
+            # Show detailed error info on first attempt and every 5th attempt
+            local kubectl_error=$(kubectl get nodes 2>&1)
+            log_debug "[Phase 1b] kubectl error (attempt $retry_count): $kubectl_error"
+        fi
+
         log_info "[Phase 1b] Waiting for k3s to be ready... (attempt $retry_count/$max_retries)"
         sleep 10
     done
 
     log_success "[Phase 1b] ✅ k3s cluster ready"
+    log_trace "[Phase 1b] Final cluster info:"
+    log_trace "$(kubectl cluster-info 2>/dev/null || echo 'cluster-info not available')"
 }
 
 validate_cluster() {
