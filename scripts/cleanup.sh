@@ -4,13 +4,14 @@
 
 # Enterprise Homelab Cleanup Script
 # Completely removes all bootstrap components and tools for fresh start
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s [--force]
+# Usage: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s [--force]
 
 # Load import utility and logging library (bash 3.2+ compatible)
 # Propagate LOG_LEVEL from environment if not set
 export LOG_LEVEL="${LOG_LEVEL:-INFO}"
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
+eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
+smart_import "infra-management/scripts/install-tools.sh"
 
 log_debug "Cleanup script starting with LOG_LEVEL=$LOG_LEVEL"
 
@@ -188,7 +189,8 @@ cleanup_k3s() {
 cleanup_tools() {
     log_info "Removing installed tools..."
 
-    local tools=("kubectl" "terraform" "helm" "flux" "yq" "vault" "mc")
+    # Use central tool list (imported at top of file)
+    local tools=("${BOOTSTRAP_TOOLS[@]}" "mc")  # mc is optional tool
     local removed_count=0
 
     for tool in "${tools[@]}"; do
@@ -304,7 +306,8 @@ verify_cleanup() {
     fi
 
     # Check tools in /usr/local/bin (cleanup target)
-    local tools=("kubectl" "terraform" "helm" "flux" "yq" "vault")
+    # Use same tool list as cleanup_tools function above
+    local tools=("${BOOTSTRAP_TOOLS[@]}")
     for tool in "${tools[@]}"; do
         if [[ -f "/usr/local/bin/$tool" ]]; then
             issues+=("$tool still present in /usr/local/bin")
@@ -396,7 +399,7 @@ case "${1:-}" in
         echo
         echo "Usage:"
         echo "  $0 [OPTIONS]"
-        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s [--force]"
+        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s [--force]"
         echo
         echo "Options:"
         echo "  --force      Skip confirmation prompt"
@@ -405,10 +408,10 @@ case "${1:-}" in
         echo
         echo "Examples:"
         echo "  # Interactive cleanup with confirmation"
-        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash"
+        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash"
         echo
         echo "  # Force cleanup without confirmation"
-        echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s --force"
+        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s --force"
         echo
         echo "This script completely removes all bootstrap components:"
         echo "  • k3s cluster and all Kubernetes resources"

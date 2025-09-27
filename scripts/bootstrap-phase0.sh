@@ -3,10 +3,10 @@ set -e
 
 # Enterprise-Ready Platform Bootstrap - Phase 0 Testing
 # Tests ONLY: environment validation, architecture detection, and tool installation
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+# Usage: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
 
 # Load import utility and logging library (bash 3.2+ compatible)
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
+eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
 
 # Parse command line arguments for enterprise scaling
@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Configuration
-GITHUB_ORG="antonioacg"
+GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
 
 
 validate_environment() {
@@ -128,31 +128,14 @@ install_tools() {
 verify_prerequisites() {
     log_info "[Phase 0b] Verifying all prerequisites..."
 
-    local required_tools=("kubectl" "terraform" "helm" "flux" "jq")
-    local missing_tools=()
-
-    for tool in "${required_tools[@]}"; do
-        if command -v "$tool" >/dev/null 2>&1; then
-            local version=""
-            case "$tool" in
-                kubectl) version=$(kubectl version --client --short 2>/dev/null | cut -d' ' -f3 || echo "unknown") ;;
-                terraform) version=$(terraform version -json 2>/dev/null | jq -r .terraform_version || echo "unknown") ;;
-                flux) version=$(flux version --client 2>/dev/null | grep 'flux version' | cut -d' ' -f3 || echo "unknown") ;;
-                *) version=$(${tool} --version 2>/dev/null | head -1 || echo "unknown") ;;
-            esac
-            log_success "[Phase 0b]   ✅ $tool available (${version})"
-        else
-            log_error "[Phase 0b]   ❌ $tool missing"
-            missing_tools+=("$tool")
-        fi
-    done
-
-    if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        log_error "[Phase 0b] Missing required tools: ${missing_tools[*]}"
+    # Use shared verification from install-tools.sh (already imported)
+    if verify_tools; then
+        log_success "[Phase 0b] ✅ All prerequisites verified"
+    else
+        log_error "[Phase 0b] Missing tools detected"
+        log_info "[Phase 0b] Please install missing tools before continuing"
         exit 1
     fi
-
-    log_success "[Phase 0b] ✅ All prerequisites verified"
 }
 
 configure_environment() {

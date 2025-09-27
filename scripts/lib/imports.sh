@@ -3,7 +3,7 @@
 #
 # Usage in scripts:
 #   # Import this utility first (bash 3.2+ compatible)
-#   eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
+#   eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 #
 #   # Then import any library
 #   smart_import "infra-management/scripts/lib/logging.sh"
@@ -18,7 +18,7 @@
 #   # Will show import resolution details
 
 # Configuration
-GITHUB_ORG="antonioacg"
+GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
 
 get_script_dir() {
     # Find the calling script (skip this imports.sh file)

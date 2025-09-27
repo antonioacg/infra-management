@@ -6,10 +6,14 @@
 # Load import utility and logging library (bash 3.2+ compatible)
 # Propagate LOG_LEVEL from environment if not set
 export LOG_LEVEL="${LOG_LEVEL:-INFO}"
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
+eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
+smart_import "infra-management/scripts/lib/network.sh"
 
 log_debug "Install tools script starting with LOG_LEVEL=$LOG_LEVEL"
+
+# Definitive tool list - all tools we install/manage
+BOOTSTRAP_TOOLS=("kubectl" "terraform" "helm" "flux" "yq" "vault")
 
 # Function to check if a command exists
 command_exists() {
@@ -29,53 +33,6 @@ get_arch() {
         arm64|aarch64) echo "arm64" ;;
         *) log_error "Unsupported architecture: $arch"; return 1 ;;
     esac
-}
-
-# Streamlined download function with retry logic
-# Usage: download_with_retry URL [OUTPUT_FILE] [MAX_ATTEMPTS]
-# If OUTPUT_FILE is omitted or "-", outputs to stdout for piping
-download_with_retry() {
-    local url="$1"
-    local output_file="${2:--}"  # Default to stdout
-    local max_attempts="${3:-3}"
-
-    # Auto-generate description from URL
-    local description="${output_file}"
-    [[ "$output_file" == "-" ]] && description="$(basename "$url")"
-
-    log_debug "Downloading from: $url"
-
-    for attempt in $(seq 1 $max_attempts); do
-        log_info "📥 Download attempt $attempt/$max_attempts for $description..."
-
-        local curl_cmd="curl -sSfL --connect-timeout 30 --max-time 300 --retry 1"
-
-        if [[ "$output_file" == "-" ]]; then
-            # Output to stdout for piping
-            if $curl_cmd "$url"; then
-                log_success "✅ $description downloaded successfully"
-                return 0
-            fi
-        else
-            # Save to file
-            if $curl_cmd -o "$output_file" "$url"; then
-                if [[ -f "$output_file" && -s "$output_file" ]]; then
-                    local size=$(ls -lh "$output_file" 2>/dev/null | awk '{print $5}' || echo "unknown")
-                    log_success "✅ $description downloaded successfully ($size)"
-                    return 0
-                else
-                    log_warning "Downloaded file is empty or missing"
-                    rm -f "$output_file"
-                fi
-            fi
-        fi
-
-        log_warning "Download attempt $attempt failed"
-        [[ $attempt -lt $max_attempts ]] && sleep 2
-    done
-
-    log_error "❌ Failed to download $description after $max_attempts attempts"
-    return 1
 }
 
 # Extract and install binary from zip file
@@ -169,7 +126,7 @@ install_kubectl() {
     local ARCH=$(get_arch) || return 1
 
     # Get latest stable version with error handling
-    KUBECTL_VERSION=$(download_with_retry "https://dl.k8s.io/release/stable.txt")
+    KUBECTL_VERSION=$(curl_with_retry "https://dl.k8s.io/release/stable.txt")
     if [[ -z "$KUBECTL_VERSION" ]]; then
         log_error "Failed to fetch kubectl version"
         return 1
@@ -178,7 +135,7 @@ install_kubectl() {
     # Download and install kubectl using our retry function
     local KUBECTL_URL="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS}/${ARCH}/kubectl"
 
-    if download_with_retry "$KUBECTL_URL" "kubectl"; then
+    if curl_with_retry "$KUBECTL_URL" "kubectl"; then
         chmod +x kubectl
         if sudo mv kubectl /usr/local/bin/; then
             log_success "kubectl successfully installed to /usr/local/bin/"
@@ -203,7 +160,7 @@ install_flux() {
     log_info "Installing Flux CLI"
 
     # Install Flux using official script with error handling
-    if download_with_retry "https://fluxcd.io/install.sh" | sudo bash; then
+    if curl_with_retry "https://fluxcd.io/install.sh" | sudo bash; then
         log_success "Flux CLI installed successfully"
     else
         log_error "Failed to install Flux CLI - check network connectivity and permissions"
@@ -222,7 +179,7 @@ install_helm() {
     log_info "Installing Helm"
 
     # Install Helm using official script with retry logic
-    if download_with_retry "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3" | bash; then
+    if curl_with_retry "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3" | bash; then
         log_success "Helm installation script executed successfully"
     else
         log_error "Failed to install helm after retry attempts"
@@ -250,7 +207,7 @@ install_terraform() {
     local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${OS}_${ARCH}.zip"
     local TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
 
-    if download_with_retry "$TERRAFORM_URL" "$TERRAFORM_ZIP"; then
+    if curl_with_retry "$TERRAFORM_URL" "$TERRAFORM_ZIP"; then
         extract_and_install_binary "$TERRAFORM_ZIP" "terraform"
     else
         return 1
@@ -276,7 +233,7 @@ install_vault_cli() {
     local VAULT_ZIP="vault_${VAULT_VERSION}_${OS}_${ARCH}.zip"
     local VAULT_URL="https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
 
-    if download_with_retry "$VAULT_URL" "$VAULT_ZIP"; then
+    if curl_with_retry "$VAULT_URL" "$VAULT_ZIP"; then
         extract_and_install_binary "$VAULT_ZIP" "vault"
     else
         return 1
@@ -300,7 +257,7 @@ install_yq() {
     log_debug "Downloading from: $YQ_BINARY_URL"
 
     # Download binary directly (yq is distributed as a single binary)
-    if download_with_retry "$YQ_BINARY_URL" "yq"; then
+    if curl_with_retry "$YQ_BINARY_URL" "yq"; then
         chmod +x yq
         sudo mv yq /usr/local/bin/
         log_success "yq ${YQ_VERSION} installed"
@@ -314,10 +271,9 @@ install_yq() {
 verify_tools() {
     log_info "Verifying tool installations"
     
-    local tools=("kubectl" "flux" "helm" "terraform" "yq" "jq" "curl" "git")
     local failed_tools=()
-    
-    for tool in "${tools[@]}"; do
+
+    for tool in "${BOOTSTRAP_TOOLS[@]}"; do
         if command_exists "$tool"; then
             local version=""
             case "$tool" in

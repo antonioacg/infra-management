@@ -9,31 +9,31 @@ Deploy a complete enterprise-grade Kubernetes platform with a single command fro
 ### One-Command Deployment
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
 ```
 
 That's it! This single command will:
 1. ✅ **Phase 0**: Validate environment and install tools (kubectl, terraform, helm, flux)
 2. ✅ **Phase 1**: Deploy k3s cluster + bootstrap storage (MinIO, PostgreSQL) with LOCAL state
-3. ✅ **Phase 2**: Deploy Vault + External Secrets + Ingress with REMOTE state migration
-4. ✅ **Phase 3**: Activate GitOps (Flux) for application deployments
-5. ✅ **Complete Platform**: Enterprise-ready infrastructure from single command
+3. ⏳ **Phase 2**: Deploy Vault + External Secrets + Ingress with REMOTE state migration (planned)
+4. ⏳ **Phase 3**: Vault initialization, unsealing, and security policies (planned)
+5. ⏳ **Phase 4**: GitOps activation with Flux (planned)
 
 ## 🎯 Enterprise Scaling
 
 ### Single Node Deployment (Default)
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
 ```
 
 ### Multi-Node Production Deployment
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=3 --tier=medium
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=3 --tier=medium
 ```
 
 ### Enterprise Scale Deployment
 ```bash
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=10 --tier=large
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=10 --tier=large
 ```
 
 ## 🧪 Individual Phase Testing
@@ -43,7 +43,7 @@ For development and troubleshooting, each phase can be tested independently:
 ### **Phase 0: Environment + Tools**
 ```bash
 # Standalone testing (full validation)
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
 
 # Called from main bootstrap (skip redundant validation)
 ./scripts/bootstrap-phase0.sh --nodes=1 --tier=small --skip-validation
@@ -52,7 +52,7 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_RE
 ### **Phase 1: k3s + Bootstrap Storage**
 ```bash
 # Standalone testing (includes environment validation)
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
 
 # Called from main bootstrap (skip Phase 0 validation)
 ./scripts/bootstrap-phase1.sh --nodes=1 --tier=small --skip-validation
@@ -96,7 +96,7 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_RE
 ### Manual Download and Execution
 ```bash
 # Download the script
-curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/bootstrap.sh -o bootstrap.sh
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh -o bootstrap.sh
 chmod +x bootstrap.sh
 
 # Execute with custom environment
@@ -105,7 +105,7 @@ GITHUB_TOKEN="ghp_xxx" ./bootstrap.sh --nodes=1 --tier=small
 
 ### Custom Workspace Directory
 ```bash
-# Default workspace: $HOME/homelab-bootstrap
+# Temporary workspace: /tmp/phase1-terraform-$$ (auto-created)
 # To use custom location, modify WORK_DIR in script
 ```
 
@@ -197,7 +197,7 @@ sudo ./scripts/install-tools.sh
 curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
 
 # Test repository access
-git clone https://github.com/antonioacg/infra-management.git
+git clone https://github.com/${GITHUB_ORG:-antonioacg}/infra-management.git
 ```
 
 #### k3s Installation Issues
@@ -213,17 +213,21 @@ sudo systemctl restart k3s
 ### Error Recovery
 
 #### Workspace Preserved for Debugging
-If bootstrap fails, the workspace is preserved at `$HOME/homelab-bootstrap`:
+If bootstrap fails, the temporary workspace is preserved for debugging:
 ```bash
-# Inspect logs
-find $HOME/homelab-bootstrap -name "*.log" -type f
+# Find workspace (process ID in directory name)
+ls -la /tmp/phase1-terraform-*
 
-# Manual retry
-cd $HOME/homelab-bootstrap/infra-management
-GITHUB_TOKEN="ghp_xxx" ./scripts/bootstrap.sh --nodes=1 --tier=small
+# Inspect terraform state and logs
+cd /tmp/phase1-terraform-*/
+terraform show
+ls -la *.log
+
+# Manual retry (if needed)
+terraform apply
 
 # Clean retry (start over)
-rm -rf $HOME/homelab-bootstrap
+rm -rf /tmp/phase1-terraform-*
 # Run bootstrap command again
 ```
 
@@ -235,8 +239,7 @@ sudo k3s-uninstall.sh
 # Clean up tools (if needed)
 sudo rm -f /usr/local/bin/{kubectl,terraform,helm,flux}
 
-# Start fresh
-rm -rf $HOME/homelab-bootstrap
+# Start fresh (no workspace cleanup needed - temporary directories auto-cleaned)
 ```
 
 ## 🎯 Next Steps After Bootstrap
@@ -306,6 +309,17 @@ When bootstrap completes successfully, you should see:
 - ✅ External Secrets syncing from Vault
 
 **You now have a complete, enterprise-grade Kubernetes platform!**
+
+## 🔧 Troubleshooting
+
+If you encounter issues during bootstrap:
+
+1. **Check the logs** - All scripts provide detailed logging with `LOG_LEVEL=DEBUG` (or `LOG_LEVEL=TRACE` for maximum detail)
+2. **Clean and retry** - Use the cleanup script and try again
+   - ⚠️ **Note**: Cleanup removes k3s cluster and all installed tools - you'll need to run Phase 0 again
+3. **Validate environment** - Ensure all prerequisites are met
+
+> **For detailed troubleshooting procedures, operational commands, and debugging guides, see the internal operational documentation.**
 
 ---
 

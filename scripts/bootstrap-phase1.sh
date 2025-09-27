@@ -3,11 +3,13 @@ set -e
 
 # Enterprise-Ready Platform Bootstrap - Phase 1 Testing
 # Tests ONLY: k3s cluster + MinIO + PostgreSQL bootstrap storage with LOCAL state
-# Usage: curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small [--skip-validation]
+# Usage: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small [--skip-validation]
 
 # Load import utility and logging library (bash 3.2+ compatible)
-eval "$(curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
+eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
+smart_import "infra-management/scripts/lib/network.sh"
+smart_import "infra-management/scripts/lib/credentials.sh"
 
 # Parse command line arguments for enterprise scaling
 NODE_COUNT=1
@@ -36,8 +38,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Configuration
-GITHUB_ORG="antonioacg"
+# Configuration - configurable like GIT_REF
+GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
 
 # Bootstrap directory for local vs remote usage
 if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
@@ -99,7 +101,7 @@ validate_environment() {
     log_success "[Phase 1a] ✅ Resources validated: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
 }
 
-detect_architecture() {
+detect_architecture() { # Phase 0 has the same detection, can we extract it to a common lib to use here and there?
     log_info "[Phase 1a] Detecting system architecture..."
 
     local arch=$(uname -m)
@@ -260,8 +262,8 @@ install_k3s() {
             log_info "[Phase 1b] Configuring for single node"
         fi
 
-        # Install k3s with standard configuration
-        curl -sfL https://get.k3s.io | sh -s - server \
+        # Install k3s with robust download and retry logic
+        curl_with_retry "https://get.k3s.io" | sh -s - server \
             $k3s_args \
             --disable traefik \
             --disable servicelb \
@@ -372,32 +374,28 @@ deploy_bootstrap_storage() {
 
     cd "$BOOTSTRAP_STATE_DIR"
 
-    # Generate MinIO credentials if script exists
-    if [[ -f "generate-credentials.sh" ]]; then
-        log_info "[Phase 1c] Generating MinIO credentials..."
-        bash generate-credentials.sh
-        source ./.minio-credentials
-    else
-        log_warning "[Phase 1c] No credential generation script found, using defaults"
-        export TF_VAR_minio_access_key="admin"
-        export TF_VAR_minio_secret_key="minio123"
-    fi
+    # Generate secure credentials in-memory (no files)
+    log_info "[Phase 1c] Generating secure MinIO credentials..."
+    generate_minio_credentials
 
-    # Set Terraform variables based on resource tier
+    # Validate all credentials present before proceeding
+    validate_required_credentials
+
+    # Export resource tier and node count for Terraform
+    export TF_VAR_resource_tier="$RESOURCE_TIER"
     export TF_VAR_node_count="$NODE_COUNT"
+
+    # Dynamic storage sizing based on tier
     case "$RESOURCE_TIER" in
         small)
-            export TF_VAR_environment="homelab"
             export TF_VAR_minio_storage_size="10Gi"
             export TF_VAR_postgresql_storage_size="8Gi"
             ;;
         medium)
-            export TF_VAR_environment="business"
             export TF_VAR_minio_storage_size="50Gi"
             export TF_VAR_postgresql_storage_size="20Gi"
             ;;
         large)
-            export TF_VAR_environment="business"
             export TF_VAR_minio_storage_size="100Gi"
             export TF_VAR_postgresql_storage_size="50Gi"
             ;;
@@ -535,6 +533,11 @@ main() {
     verify_bootstrap_foundation
 
     log_phase "🚀 Phase 1: Complete!"
+
+    # Clear credentials from memory (security best practice)
+    log_info "[Phase 1] Clearing credentials from memory..."
+    clear_credentials
+
     print_success_message
 
     # Clean up temporary directory in remote mode

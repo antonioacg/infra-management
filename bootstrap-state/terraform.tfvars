@@ -1,12 +1,12 @@
-# Bootstrap State Environment Configuration
-# This file defines the environment-specific variables for scaling
+# Bootstrap State Configuration
+# Enterprise-ready scaling from Day 1
 
-# Environment: homelab (1-2 nodes) or business (3+ nodes)
-environment = "homelab"
+# Resource tier for CPU/memory/storage sizing
+resource_tier = "small"
 
-# Node configuration
+# Node configuration (drives standalone vs distributed mode)
 node_count = 1
 
-# Storage configuration for homelab environment
+# Storage configuration
 minio_storage_size = "10Gi"
 postgresql_storage_size = "8Gi"

@@ -18,14 +18,14 @@ variable "postgresql_storage_size" {
   default     = "8Gi"
 }
 
-variable "environment" {
-  description = "Environment phase (homelab or business)"
+variable "resource_tier" {
+  description = "Resource tier for CPU/memory/storage sizing: small, medium, or large"
   type        = string
-  default     = "homelab"
+  default     = "small"
 
   validation {
-    condition     = contains(["homelab", "business"], var.environment)
-    error_message = "Environment must be either 'homelab' or 'business'."
+    condition     = contains(["small", "medium", "large"], var.resource_tier)
+    error_message = "Resource tier must be: small, medium, or large."
   }
 }
 
