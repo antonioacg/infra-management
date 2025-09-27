@@ -410,9 +410,10 @@ case "${1:-}" in
         echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- [--force]"
         echo
         echo "Options:"
-        echo "  --force      Skip confirmation prompt"
-        echo "  --contexts   Comma-separated list of kubectl contexts to remove"
-        echo "  --help       Show this help message"
+        echo "  --force        Skip confirmation prompt"
+        echo "  --skip-phase0  Preserve tools and directories (only remove k3s)"
+        echo "  --contexts     Comma-separated list of kubectl contexts to remove"
+        echo "  --help         Show this help message"
         echo
         echo "Examples:"
         echo "  # Interactive cleanup with confirmation"
@@ -421,11 +422,22 @@ case "${1:-}" in
         echo "  # Force cleanup without confirmation"
         echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force"
         echo
-        echo "This script completely removes all bootstrap components:"
+        echo "  # Quick cleanup preserving Phase 0 state"
+        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force --skip-phase0"
+        echo
+        echo "This script can remove bootstrap components in two modes:"
+        echo
+        echo "Full cleanup (default):"
         echo "  • k3s cluster and all Kubernetes resources"
         echo "  • All installed tools (kubectl, terraform, helm, flux, yq, vault)"
         echo "  • All bootstrap directories and temporary files"
         echo "  • All running port-forwards and background processes"
+        echo
+        echo "Phase 0 preservation (--skip-phase0):"
+        echo "  • k3s cluster and all Kubernetes resources"
+        echo "  • kubectl config contexts for k3s"
+        echo "  • All running port-forwards and k3s processes"
+        echo "  • Tools and bootstrap directories are preserved"
         exit 0
         ;;
     *)
