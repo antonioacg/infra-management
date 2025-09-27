@@ -2,35 +2,48 @@
 # Secure credential management library
 # Generates credentials in-memory, no file persistence
 
-generate_minio_credentials() {
-    local access_key_length=16
-    local secret_key_length=32
+# PRIVATE: Generic secure credential generator
+_generate_secure_credential() {
+    local length="$1"
+    local pattern="${2:-a-zA-Z0-9}"  # Default alphanumeric
+    local output_var="$3"
+    local prefix="${4:-}"  # Optional prefix
 
-    log_info "Generating secure MinIO credentials in-memory..."
-
-    # Generate cryptographically secure random credentials (inspired by generate-credentials.sh)
+    local value
     if command -v openssl >/dev/null 2>&1; then
-        # Use patterns from existing script but generate in-memory only
-        MINIO_ACCESS_KEY="admin-$(openssl rand -hex 4)"
-        MINIO_SECRET_KEY="$(openssl rand -base64 32 | tr -d '=+/' | head -c 24)"
+        # Generate more entropy and filter to pattern
+        value=$(openssl rand -base64 64 | LC_ALL=C tr -dc "$pattern" | head -c "$length")
     elif [[ -r /dev/urandom ]]; then
-        # Fallback for systems without openssl
-        MINIO_ACCESS_KEY="admin-$(cat /dev/urandom | LC_ALL=C tr -dc 'a-f0-9' | fold -w 8 | head -n 1)"
-        MINIO_SECRET_KEY=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | fold -w 24 | head -n 1)
+        value=$(cat /dev/urandom | LC_ALL=C tr -dc "$pattern" | fold -w "$length" | head -n 1)
     else
         log_error "Cannot generate secure credentials: no entropy source available"
-        log_error "Required: openssl command or /dev/urandom access"
         exit 1
     fi
 
-    # Validate credentials were generated
-    if [[ -z "$MINIO_ACCESS_KEY" || -z "$MINIO_SECRET_KEY" ]]; then
-        log_error "Failed to generate MinIO credentials"
-        log_error "Access key length: ${#MINIO_ACCESS_KEY}, Secret key length: ${#MINIO_SECRET_KEY}"
+    if [[ -z "$value" || ${#value} -lt "$length" ]]; then
+        log_error "Failed to generate credential of length $length"
         exit 1
     fi
 
-    # Validate credential format and length
+    # Add prefix if provided
+    if [[ -n "$prefix" ]]; then
+        value="${prefix}${value}"
+    fi
+
+    eval "$output_var='$value'"
+}
+
+# PRIVATE: Generate secure MinIO credentials in-memory
+_generate_minio_credentials() {
+    log_info "Generating secure MinIO credentials in-memory..."
+
+    # Generate access key with admin prefix and hex pattern
+    _generate_secure_credential 8 "a-f0-9" MINIO_ACCESS_KEY "admin-"
+
+    # Generate secret key
+    _generate_secure_credential 24 "a-zA-Z0-9" MINIO_SECRET_KEY
+
+    # Validate credentials format
     if [[ ! "$MINIO_ACCESS_KEY" =~ ^admin-[a-f0-9]{8}$ ]]; then
         log_error "Generated access key has invalid format: $MINIO_ACCESS_KEY"
         exit 1
@@ -41,8 +54,6 @@ generate_minio_credentials() {
         exit 1
     fi
 
-    log_success "✅ Generated secure MinIO credentials in-memory (no files created)"
-
     # Export for Terraform
     export TF_VAR_minio_access_key="$MINIO_ACCESS_KEY"
     export TF_VAR_minio_secret_key="$MINIO_SECRET_KEY"
@@ -50,33 +61,111 @@ generate_minio_credentials() {
     return 0
 }
 
-validate_required_credentials() {
-    local missing_vars=()
+# PRIVATE: Generate secure PostgreSQL credentials in-memory
+_generate_postgresql_credentials() {
+    log_info "Generating secure PostgreSQL credentials in-memory..."
 
-    [[ -z "${TF_VAR_minio_access_key:-}" ]] && missing_vars+=("TF_VAR_minio_access_key")
-    [[ -z "${TF_VAR_minio_secret_key:-}" ]] && missing_vars+=("TF_VAR_minio_secret_key")
+    # Generate secure password
+    _generate_secure_credential 24 "a-zA-Z0-9" POSTGRES_PASSWORD
 
-    if [[ ${#missing_vars[@]} -gt 0 ]]; then
-        log_error "Missing required credential variables: ${missing_vars[*]}"
-        log_error "Run generate_minio_credentials() before deploying"
+    # Validate minimum length
+    if [[ ${#POSTGRES_PASSWORD} -lt 20 ]]; then
+        log_error "Generated PostgreSQL password too short: ${#POSTGRES_PASSWORD} characters"
         exit 1
     fi
 
-    log_success "✅ All required credentials validated"
+    # Export for Terraform
+    export TF_VAR_postgres_password="$POSTGRES_PASSWORD"
+
     return 0
 }
 
-clear_credentials() {
-    log_info "Clearing credentials from memory..."
+# PRIVATE: Generic credential validation helper
+_validate_credentials() {
+    local service_name="$1"
+    local generator_func="$2"
+    shift 2
+    local vars=("$@")
 
-    # Clear environment variables
-    unset TF_VAR_minio_access_key
-    unset TF_VAR_minio_secret_key
-    unset MINIO_ACCESS_KEY
-    unset MINIO_SECRET_KEY
+    local missing_vars=()
+    for var in "${vars[@]}"; do
+        [[ -z "${!var:-}" ]] && missing_vars+=("$var")
+    done
 
-    log_success "✅ Credentials cleared from memory"
+    if [[ ${#missing_vars[@]} -gt 0 ]]; then
+        log_error "Missing $service_name credential variables: ${missing_vars[*]}"
+        log_error "Run $generator_func() before deploying"
+        exit 1
+    fi
+
+    return 0
+}
+
+# PRIVATE: Generic credential clearing helper
+_clear_credentials() {
+    local service_name="$1"
+    shift
+    local vars=("$@")
+
+    for var in "${vars[@]}"; do
+        unset "$var"
+    done
+}
+
+# PRIVATE: Individual credential validation functions
+_validate_minio_credentials() {
+    _validate_credentials "MinIO" "generate_bootstrap_credentials" \
+        "TF_VAR_minio_access_key" "TF_VAR_minio_secret_key"
+}
+
+_validate_postgresql_credentials() {
+    _validate_credentials "PostgreSQL" "generate_bootstrap_credentials" \
+        "TF_VAR_postgres_password"
+}
+
+# PRIVATE: Individual credential clearing functions
+_clear_minio_credentials() {
+    _clear_credentials "MinIO" \
+        "TF_VAR_minio_access_key" "TF_VAR_minio_secret_key" \
+        "MINIO_ACCESS_KEY" "MINIO_SECRET_KEY"
+}
+
+_clear_postgresql_credentials() {
+    _clear_credentials "PostgreSQL" \
+        "TF_VAR_postgres_password" "POSTGRES_PASSWORD"
+}
+
+# Generate all bootstrap credentials (MinIO + PostgreSQL)
+generate_bootstrap_credentials() {
+    log_info "Generating secure bootstrap credentials in-memory..."
+
+    _generate_minio_credentials
+    _generate_postgresql_credentials
+
+    log_success "✅ Generated all bootstrap credentials in-memory (no files created)"
+    return 0
+}
+
+# Validate all bootstrap credentials
+validate_bootstrap_credentials() {
+    log_info "Validating all bootstrap credentials..."
+
+    _validate_minio_credentials
+    _validate_postgresql_credentials
+
+    log_success "✅ All bootstrap credentials validated"
+    return 0
+}
+
+# Clear all bootstrap credentials
+clear_bootstrap_credentials() {
+    log_info "Clearing all bootstrap credentials from memory..."
+
+    _clear_minio_credentials
+    _clear_postgresql_credentials
+
+    log_success "✅ All bootstrap credentials cleared from memory"
 }
 
 # Cleanup credentials on script exit (security best practice)
-trap clear_credentials EXIT
+trap clear_bootstrap_credentials EXIT

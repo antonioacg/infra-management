@@ -89,7 +89,7 @@ resource "helm_release" "bootstrap_postgresql" {
 
   values = [yamlencode({
     auth = {
-      postgresPassword = "postgres123"
+      postgresPassword = var.postgres_password
       database         = "terraform_locks"
     }
     primary = {

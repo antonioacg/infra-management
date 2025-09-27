@@ -354,11 +354,10 @@ _deploy_bootstrap_storage() {
     cd "$BOOTSTRAP_STATE_DIR"
 
     # Generate secure credentials in-memory (no files)
-    log_info "[Phase 1c] Generating secure MinIO credentials..."
-    generate_minio_credentials
+    generate_bootstrap_credentials
 
     # Validate all credentials present before proceeding
-    validate_required_credentials
+    validate_bootstrap_credentials
 
     # Export resource tier and node count for Terraform
     export TF_VAR_resource_tier="$RESOURCE_TIER"
@@ -415,13 +414,13 @@ _verify_bootstrap_foundation() {
 
     # Create terraform_locks database if it doesn't exist
     log_info "[Phase 1c] Creating terraform_locks database..."
-    kubectl exec -n bootstrap statefulset/bootstrap-postgresql -- psql -U postgres -c "CREATE DATABASE terraform_locks;" 2>/dev/null || {
+    kubectl exec -n bootstrap statefulset/bootstrap-postgresql -- bash -c "PGPASSWORD='$POSTGRES_PASSWORD' psql -U postgres -c 'CREATE DATABASE terraform_locks;'" 2>/dev/null || {
         log_debug "[Phase 1c] Database terraform_locks already exists or creation failed (expected if already exists)"
     }
 
     # Test PostgreSQL connectivity
     log_info "[Phase 1c] Testing PostgreSQL connectivity..."
-    kubectl exec -n bootstrap statefulset/bootstrap-postgresql -- psql -U postgres -d terraform_locks -c "SELECT 1;" >/dev/null && {
+    kubectl exec -n bootstrap statefulset/bootstrap-postgresql -- bash -c "PGPASSWORD='$POSTGRES_PASSWORD' psql -U postgres -d terraform_locks -c 'SELECT 1;'" >/dev/null && {
         log_success "[Phase 1c] PostgreSQL connectivity test successful"
     } || {
         log_warning "[Phase 1c] PostgreSQL connectivity test failed"
@@ -438,6 +437,10 @@ _verify_bootstrap_foundation() {
 _cleanup_on_error() {
     local exit_code=$?
     local line_number=$1
+
+    # Clear credentials from memory (security best practice)
+    log_info "[Phase 1] Clearing credentials from memory..."
+    clear_bootstrap_credentials
 
     # Clean up temporary directory in remote mode
     if [[ "${USE_LOCAL_IMPORTS:-false}" != "true" && -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
@@ -529,7 +532,7 @@ main() {
 
     # Clear credentials from memory (security best practice)
     log_info "[Phase 1] Clearing credentials from memory..."
-    clear_credentials
+    clear_bootstrap_credentials
 
     print_success_message
 
