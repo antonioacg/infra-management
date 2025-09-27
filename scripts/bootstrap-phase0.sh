@@ -36,7 +36,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 
-validate_environment() {
+# PRIVATE: Validate environment prerequisites for Phase 0
+_validate_environment() {
     log_info "[Phase 0a] Validating environment and prerequisites..."
 
     # Check GitHub token (allow "test" for Phase 0 testing)
@@ -111,7 +112,8 @@ verify_prerequisites() {
     fi
 }
 
-configure_environment() {
+# PRIVATE: Configure environment variables and paths
+_configure_environment() {
     log_info "[Phase 0c] Configuring environment variables..."
 
     # Export required environment variables
@@ -125,7 +127,8 @@ configure_environment() {
     log_success "[Phase 0c] ✅ Environment configured"
 }
 
-cleanup_on_error() {
+# PRIVATE: Cleanup resources and provide helpful error information
+_cleanup_on_error() {
     local exit_code=$?
     local line_number=$1
 
@@ -147,7 +150,8 @@ cleanup_on_error() {
     fi
 }
 
-get_current_phase() {
+# PRIVATE: Get current bootstrap phase for error reporting
+_get_current_phase() {
     if ! command -v terraform >/dev/null 2>&1; then
         echo "Phase 0b: Tool Installation"
     elif [[ -z "$GITHUB_TOKEN" ]]; then
@@ -181,7 +185,7 @@ print_success_message() {
 
 main() {
     # Set up comprehensive error handling
-    trap 'cleanup_on_error $LINENO' ERR
+    trap '_cleanup_on_error $LINENO' ERR
     trap 'log_warning "[Phase 0] Script interrupted by user"; exit 130' INT TERM
 
     print_banner "🧪 Enterprise Platform Phase 0 Testing" \
@@ -189,7 +193,7 @@ main() {
                  "🎯 Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
 
     log_phase "🚀 Phase 0a: Environment Validation"
-    validate_environment
+    _validate_environment
     detect_system_architecture
 
     log_phase "🚀 Phase 0b: Tool Installation"
@@ -197,7 +201,7 @@ main() {
     verify_prerequisites
 
     log_phase "🚀 Phase 0c: Configuration"
-    configure_environment
+    _configure_environment
 
     log_phase "🚀 Phase 0: Complete!"
     print_success_message

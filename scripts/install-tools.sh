@@ -20,14 +20,15 @@ log_debug "Install tools script starting with LOG_LEVEL=$LOG_LEVEL"
 BOOTSTRAP_TOOLS=("kubectl" "terraform" "helm" "flux" "yq" "vault")
 
 # Function to check if a command exists
-command_exists() {
+# PRIVATE: Check if a command exists in PATH
+_command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
 
-# Extract and install binary from zip file
-# Usage: extract_and_install_binary ZIP_FILE BINARY_NAME [TARGET_DIR]
-extract_and_install_binary() {
+# Usage: _extract_and_install_binary ZIP_FILE BINARY_NAME [TARGET_DIR]
+# PRIVATE: Extract and install binary from downloaded archive
+_extract_and_install_binary() {
     local zip_file="$1"
     local binary_name="$2"
     local target_dir="${3:-/usr/local/bin}"
@@ -62,20 +63,20 @@ extract_and_install_binary() {
 install_package() {
     local package="$1"
     
-    if command_exists brew; then
+    if _command_exists brew; then
         # macOS with Homebrew
         brew install "$package"
-    elif command_exists apt-get; then
+    elif _command_exists apt-get; then
         # Ubuntu/Debian
         sudo apt-get update -qq
         sudo apt-get install -y "$package"
-    elif command_exists yum; then
+    elif _command_exists yum; then
         # CentOS/RHEL
         sudo yum install -y "$package"
-    elif command_exists dnf; then
+    elif _command_exists dnf; then
         # Fedora
         sudo dnf install -y "$package"
-    elif command_exists pacman; then
+    elif _command_exists pacman; then
         # Arch Linux
         sudo pacman -S --noconfirm "$package"
     else
@@ -92,7 +93,7 @@ install_system_tools() {
     local tools=("curl" "wget" "git" "jq" "unzip")
     
     for tool in "${tools[@]}"; do
-        if ! command_exists "$tool"; then
+        if ! _command_exists "$tool"; then
             log_info "Installing $tool"
             install_package "$tool"
             log_success "$tool installed"
@@ -104,7 +105,7 @@ install_system_tools() {
 
 # Install kubectl
 install_kubectl() {
-    if command_exists kubectl; then
+    if _command_exists kubectl; then
         log_success "kubectl already installed ($(kubectl version --client --short 2>/dev/null || echo 'version unknown'))"
         return 0
     fi
@@ -140,7 +141,7 @@ install_kubectl() {
 
 # Install Flux CLI
 install_flux() {
-    if command_exists flux; then
+    if _command_exists flux; then
         log_success "Flux CLI already installed ($(flux version --client 2>/dev/null | grep 'flux version' || echo 'version unknown'))"
         return 0
     fi
@@ -159,7 +160,7 @@ install_flux() {
 
 # Install Helm
 install_helm() {
-    if command_exists helm; then
+    if _command_exists helm; then
         log_success "Helm already installed ($(helm version --short 2>/dev/null || echo 'version unknown'))"
         return 0
     fi
@@ -180,7 +181,7 @@ install_helm() {
 
 # Install Terraform
 install_terraform() {
-    if command_exists terraform; then
+    if _command_exists terraform; then
         log_success "Terraform already installed ($(terraform version -json 2>/dev/null | jq -r .terraform_version || echo 'version unknown'))"
         return 0
     fi
@@ -194,7 +195,7 @@ install_terraform() {
     local TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
 
     if curl_with_retry "$TERRAFORM_URL" "$TERRAFORM_ZIP"; then
-        extract_and_install_binary "$TERRAFORM_ZIP" "terraform"
+        _extract_and_install_binary "$TERRAFORM_ZIP" "terraform"
     else
         return 1
     fi
@@ -204,7 +205,7 @@ install_terraform() {
 
 # Install Vault CLI (optional, for debugging)
 install_vault_cli() {
-    if command_exists vault; then
+    if _command_exists vault; then
         log_success "Vault CLI already installed ($(vault version 2>/dev/null | head -1 || echo 'version unknown'))"
         return 0
     fi
@@ -218,7 +219,7 @@ install_vault_cli() {
     local VAULT_URL="https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
 
     if curl_with_retry "$VAULT_URL" "$VAULT_ZIP"; then
-        extract_and_install_binary "$VAULT_ZIP" "vault"
+        _extract_and_install_binary "$VAULT_ZIP" "vault"
     else
         return 1
     fi
@@ -228,7 +229,7 @@ install_vault_cli() {
 
 # Install yq (YAML processor)
 install_yq() {
-    if command_exists yq; then
+    if _command_exists yq; then
         log_success "yq already installed ($(yq --version 2>/dev/null || echo 'version unknown'))"
         return
     fi
@@ -258,7 +259,7 @@ verify_tools() {
     local failed_tools=()
 
     for tool in "${BOOTSTRAP_TOOLS[@]}"; do
-        if command_exists "$tool"; then
+        if _command_exists "$tool"; then
             local version=""
             case "$tool" in
                 kubectl) version=$(kubectl version --client --short 2>/dev/null | cut -d' ' -f3 || echo "unknown") ;;
@@ -353,7 +354,7 @@ validate_tools() {
         local tool="${tool_info%%:*}"
         local version_cmd="${tool_info#*:}"
 
-        if command_exists "$tool"; then
+        if _command_exists "$tool"; then
             local version=$(eval "$version_cmd" 2>/dev/null || echo "version unknown")
             local path=$(command -v "$tool")
             log_success "  ✅ $tool: $version (at: $path)"
@@ -368,7 +369,7 @@ validate_tools() {
     local missing_tools=()
 
     for tool in "${required_tools[@]}"; do
-        if ! command_exists "$tool"; then
+        if ! _command_exists "$tool"; then
             missing_tools+=("$tool")
         fi
     done
@@ -382,15 +383,15 @@ validate_tools() {
 
     echo ""
     log_info "🔍 Package Manager Detection:"
-    if command_exists brew; then
+    if _command_exists brew; then
         log_success "  ✅ Homebrew (macOS): $(brew --version | head -1)"
-    elif command_exists apt-get; then
+    elif _command_exists apt-get; then
         log_success "  ✅ apt-get (Ubuntu/Debian): available"
-    elif command_exists yum; then
+    elif _command_exists yum; then
         log_success "  ✅ yum (CentOS/RHEL): available"
-    elif command_exists dnf; then
+    elif _command_exists dnf; then
         log_success "  ✅ dnf (Fedora): available"
-    elif command_exists pacman; then
+    elif _command_exists pacman; then
         log_success "  ✅ pacman (Arch Linux): available"
     else
         log_error "  ❌ No supported package manager found"

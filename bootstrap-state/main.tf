@@ -88,10 +88,6 @@ resource "helm_release" "bootstrap_postgresql" {
   create_namespace = true
 
   values = [yamlencode({
-    image = {
-      repository = "postgres"
-      tag        = "latest"
-    }
     auth = {
       postgresPassword = "postgres123"
       database         = "terraform_locks"

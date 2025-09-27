@@ -20,8 +20,8 @@ NC='\033[0m' # No Color
 LOG_LEVEL=${LOG_LEVEL:-INFO}
 LOG_TIMESTAMPS=${LOG_TIMESTAMPS:-false}
 
-# Dynamic banner width detection
-get_banner_width() {
+# PRIVATE: Dynamic banner width detection
+_get_banner_width() {
     local max_width=120
     local min_width=60
     local terminal_width
@@ -48,7 +48,7 @@ get_banner_width() {
     fi
 }
 
-BANNER_WIDTH=${BANNER_WIDTH:-$(get_banner_width)}
+BANNER_WIDTH=${BANNER_WIDTH:-$(_get_banner_width)}
 
 # Internal function to get timestamp if enabled
 _get_timestamp() {

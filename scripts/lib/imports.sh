@@ -21,7 +21,8 @@
 GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
 GIT_REF="${GIT_REF:-main}"
 
-get_script_dir() {
+# PRIVATE: Get the directory of the calling script
+_get_script_dir() {
     # Find the calling script (skip this imports.sh file)
     local i=1
     while [[ "${BASH_SOURCE[$i]}" == *"imports.sh" ]]; do
@@ -38,7 +39,7 @@ smart_import() {
 
     if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
         # Local development: find repo root by looking for repo name in script path
-        local script_dir="$(get_script_dir)"
+        local script_dir="$(_get_script_dir)"
         [[ "${DEBUG_IMPORTS:-false}" == "true" ]] && echo "DEBUG: Script dir: $script_dir" >&2
         [[ "${DEBUG_IMPORTS:-false}" == "true" ]] && echo "DEBUG: Looking for repo: $repo_name" >&2
 

@@ -52,7 +52,8 @@ else
     mkdir -p "$BOOTSTRAP_STATE_DIR"
 fi
 
-validate_environment() {
+# PRIVATE: Validate environment prerequisites for Phase 1
+_validate_environment() {
     if [[ "$SKIP_VALIDATION" == "true" ]]; then
         log_info "[Phase 1a] Skipping environment validation (orchestrated mode)"
         return
@@ -102,7 +103,8 @@ validate_environment() {
 }
 
 
-validate_kubectl_context() {
+# PRIVATE: Validate kubectl context is not conflicting with existing k3s installations
+_validate_kubectl_context() {
     local expected_context="$1"
     log_trace "[Phase 1b] Validating kubectl context setup..."
 
@@ -124,7 +126,8 @@ validate_kubectl_context() {
     log_success "[Phase 1b] ✅ kubectl context '$expected_context' verified and working"
 }
 
-setup_kubectl_config() {
+# PRIVATE: Setup kubectl configuration for k3s cluster
+_setup_kubectl_config() {
     local context_name="$1"
     log_info "[Phase 1b] Setting up kubectl context: $context_name"
 
@@ -188,10 +191,11 @@ setup_kubectl_config() {
     fi
 
     # Validate that kubectl is working
-    validate_kubectl_context "$context_name"
+    _validate_kubectl_context "$context_name"
 }
 
-install_k3s() {
+# PRIVATE: Install and configure k3s cluster
+_install_k3s() {
     log_info "[Phase 1b] Installing k3s cluster..."
 
     # Detect available context name BEFORE any k3s operations to avoid conflicts
@@ -246,7 +250,7 @@ install_k3s() {
 
     # Always ensure kubectl context is properly configured
     log_info "[Phase 1b] Setting up kubectl context: $context_name"
-    setup_kubectl_config "$context_name"
+    _setup_kubectl_config "$context_name"
 
     # Wait for k3s to be ready with enhanced error reporting
     log_trace "[Phase 1b] Starting k3s readiness check..."
@@ -280,7 +284,8 @@ install_k3s() {
     log_trace "$(kubectl cluster-info 2>/dev/null || echo 'cluster-info not available')"
 }
 
-validate_cluster() {
+# PRIVATE: Validate k3s cluster is healthy and responsive
+_validate_cluster() {
     log_info "[Phase 1b] Validating k3s cluster..."
 
     # Check cluster access
@@ -306,7 +311,8 @@ validate_cluster() {
     log_info "[Phase 1b]   • Storage: local-path available"
 }
 
-prepare_terraform_workspace() {
+# PRIVATE: Prepare Terraform workspace for bootstrap storage deployment
+_prepare_terraform_workspace() {
     log_info "[Phase 1c] Preparing Terraform workspace..."
 
     if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
@@ -341,7 +347,8 @@ prepare_terraform_workspace() {
     fi
 }
 
-deploy_bootstrap_storage() {
+# PRIVATE: Deploy MinIO and PostgreSQL bootstrap storage components
+_deploy_bootstrap_storage() {
     log_info "[Phase 1c] Deploying bootstrap storage with LOCAL state..."
 
     cd "$BOOTSTRAP_STATE_DIR"
@@ -377,15 +384,19 @@ deploy_bootstrap_storage() {
     terraform init
 
     log_info "[Phase 1c] Planning bootstrap infrastructure..."
-    terraform plan
+    terraform plan -out=tfplan
 
     log_info "[Phase 1c] Applying bootstrap infrastructure..."
-    terraform apply -auto-approve
+    terraform apply tfplan
+
+    # Clean up plan file immediately after use
+    rm -f tfplan
 
     log_success "[Phase 1c] ✅ Bootstrap storage deployed"
 }
 
-verify_bootstrap_foundation() {
+# PRIVATE: Verify bootstrap foundation components are working
+_verify_bootstrap_foundation() {
     log_info "[Phase 1c] Verifying bootstrap foundation..."
 
     # Wait for MinIO to be ready
@@ -402,10 +413,18 @@ verify_bootstrap_foundation() {
         log_warning "[Phase 1c] MinIO connectivity test skipped (mc not available in container)"
     }
 
+    # Create terraform_locks database if it doesn't exist
+    log_info "[Phase 1c] Creating terraform_locks database..."
+    kubectl exec -n bootstrap statefulset/bootstrap-postgresql -- psql -U postgres -c "CREATE DATABASE terraform_locks;" 2>/dev/null || {
+        log_debug "[Phase 1c] Database terraform_locks already exists or creation failed (expected if already exists)"
+    }
+
     # Test PostgreSQL connectivity
     log_info "[Phase 1c] Testing PostgreSQL connectivity..."
-    kubectl exec -n bootstrap deployment/bootstrap-postgresql -- psql -U postgres -d terraform_locks -c "SELECT 1;" >/dev/null || {
-        log_warning "[Phase 1c] PostgreSQL connectivity test completed"
+    kubectl exec -n bootstrap statefulset/bootstrap-postgresql -- psql -U postgres -d terraform_locks -c "SELECT 1;" >/dev/null && {
+        log_success "[Phase 1c] PostgreSQL connectivity test successful"
+    } || {
+        log_warning "[Phase 1c] PostgreSQL connectivity test failed"
     }
 
     # Show deployed components
@@ -415,7 +434,8 @@ verify_bootstrap_foundation() {
     log_info "[Phase 1c]   • Local State: terraform.tfstate in $(pwd)"
 }
 
-cleanup_on_error() {
+# PRIVATE: Cleanup resources and provide helpful error information
+_cleanup_on_error() {
     local exit_code=$?
     local line_number=$1
 
@@ -446,7 +466,8 @@ cleanup_on_error() {
     fi
 }
 
-get_current_phase() {
+# PRIVATE: Get current bootstrap phase for error reporting
+_get_current_phase() {
     if ! command -v k3s >/dev/null 2>&1; then
         echo "Phase 1b: k3s Installation"
     elif ! kubectl get namespace bootstrap >/dev/null 2>&1; then
@@ -484,7 +505,7 @@ print_success_message() {
 
 main() {
     # Set up comprehensive error handling
-    trap 'cleanup_on_error $LINENO' ERR
+    trap '_cleanup_on_error $LINENO' ERR
     trap 'log_warning "[Phase 1] Script interrupted by user"; exit 130' INT TERM
 
     print_banner "🏗️  Enterprise Platform Phase 1" \
@@ -492,17 +513,17 @@ main() {
                  "🎯 Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
 
     log_phase "🚀 Phase 1a: Environment Validation"
-    validate_environment
+    _validate_environment
     detect_system_architecture
 
     log_phase "🚀 Phase 1b: k3s Cluster Installation"
-    install_k3s
-    validate_cluster
+    _install_k3s
+    _validate_cluster
 
     log_phase "🚀 Phase 1c: Bootstrap Storage Deployment"
-    prepare_terraform_workspace
-    deploy_bootstrap_storage
-    verify_bootstrap_foundation
+    _prepare_terraform_workspace
+    _deploy_bootstrap_storage
+    _verify_bootstrap_foundation
 
     log_phase "🚀 Phase 1: Complete!"
 

@@ -72,7 +72,8 @@ run_phase_0() {
     fi
 }
 
-setup_workspace() {
+# PRIVATE: Setup workspace directory for bootstrap process
+_setup_workspace() {
     log_info "Setting up workspace directory..."
 
     # Create work directory
@@ -87,7 +88,8 @@ setup_workspace() {
     log_success "Workspace created: $WORK_DIR"
 }
 
-clone_repositories() {
+# PRIVATE: Clone required repositories for bootstrap
+_clone_repositories() {
     log_info "Cloning required repositories..."
 
     # Clone all repositories in parallel for speed
@@ -150,7 +152,8 @@ verify_prerequisites() {
     log_success "All prerequisites verified"
 }
 
-configure_environment() {
+# PRIVATE: Configure environment variables and workspace
+_configure_environment() {
     log_info "Configuring environment variables..."
 
     # Export required environment variables
@@ -175,7 +178,8 @@ execute_bootstrap() {
     GITHUB_TOKEN="$GITHUB_TOKEN" ./scripts/bootstrap.sh --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"
 }
 
-cleanup_on_error() {
+# PRIVATE: Cleanup resources and provide helpful error information
+_cleanup_on_error() {
     local exit_code=$?
     local line_number=$1
 
@@ -198,7 +202,8 @@ cleanup_on_error() {
     fi
 }
 
-get_current_phase() {
+# PRIVATE: Get current bootstrap phase for error reporting
+_get_current_phase() {
     if [[ ! -d "$WORK_DIR" ]]; then
         echo "Phase 0: Environment Validation"
     elif [[ ! -d "$WORK_DIR/infra-management" ]]; then
@@ -247,7 +252,7 @@ print_success_message() {
 
 main() {
     # Set up comprehensive error handling
-    trap 'cleanup_on_error $LINENO' ERR
+    trap '_cleanup_on_error $LINENO' ERR
     trap 'log_warning "Script interrupted by user"; rollback_on_failure; exit 130' INT TERM
 
     validate_token
@@ -257,15 +262,15 @@ main() {
     run_phase_0
 
     log_phase "Phase 1: Workspace Setup"
-    setup_workspace
-    clone_repositories
+    _setup_workspace
+    _clone_repositories
 
     log_phase "Phase 2: Tool Installation"
     install_tools
     verify_prerequisites
 
     log_phase "Phase 3: Configuration"
-    configure_environment
+    _configure_environment
 
     log_phase "Phase 4: Bootstrap Execution"
     execute_bootstrap

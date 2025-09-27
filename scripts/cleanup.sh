@@ -37,7 +37,8 @@ confirm_cleanup() {
     fi
 }
 
-cleanup_kubectl_config() {
+# PRIVATE: Cleanup kubectl configuration contexts
+_cleanup_kubectl_config() {
     local specified_contexts="$1"
     log_info "Cleaning up kubectl config..."
 
@@ -161,7 +162,8 @@ cleanup_kubectl_config() {
     fi
 }
 
-cleanup_k3s() {
+# PRIVATE: Cleanup k3s installation
+_cleanup_k3s() {
     log_info "Removing k3s cluster..."
 
     # Stop k3s service
@@ -189,7 +191,8 @@ cleanup_k3s() {
     fi
 }
 
-cleanup_tools() {
+# PRIVATE: Cleanup installed tools
+_cleanup_tools() {
     log_info "Removing installed tools..."
 
     # Use central tool list (imported at top of file)
@@ -222,7 +225,8 @@ cleanup_tools() {
 }
 
 
-cleanup_directories() {
+# PRIVATE: Cleanup bootstrap directories
+_cleanup_directories() {
     log_info "Removing bootstrap directories..."
 
     local directories=(
@@ -263,7 +267,8 @@ cleanup_directories() {
     log_success "Removed $removed_count directories"
 }
 
-cleanup_processes() {
+# PRIVATE: Cleanup running processes
+_cleanup_processes() {
     log_info "Stopping running processes..."
 
     # Kill port-forwards
@@ -381,11 +386,11 @@ main() {
 
     log_info "Starting cleanup process..."
 
-    cleanup_processes
-    cleanup_kubectl_config "$kubectl_contexts"
-    cleanup_k3s
-    cleanup_tools
-    cleanup_directories
+    _cleanup_processes
+    _cleanup_kubectl_config "$kubectl_contexts"
+    _cleanup_k3s
+    _cleanup_tools
+    _cleanup_directories
 
     if verify_cleanup; then
         print_success
