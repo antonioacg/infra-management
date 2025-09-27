@@ -3,18 +3,21 @@ set -e
 
 # Enterprise-Ready Platform Bootstrap - Phase 1 Testing
 # Tests ONLY: k3s cluster + MinIO + PostgreSQL bootstrap storage with LOCAL state
-# Usage: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small [--skip-validation]
+# Usage: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s -- --nodes=1 --tier=small [--skip-validation]
 
-# Load import utility and logging library (bash 3.2+ compatible)
-eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
-smart_import "infra-management/scripts/lib/logging.sh"
-smart_import "infra-management/scripts/lib/network.sh"
-smart_import "infra-management/scripts/lib/credentials.sh"
-
-# Parse command line arguments for enterprise scaling
+# Configuration - set defaults before imports
+GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
+GIT_REF="${GIT_REF:-main}"
 NODE_COUNT=1
 RESOURCE_TIER="small"
 SKIP_VALIDATION=false
+
+# Load import utility and logging library (bash 3.2+ compatible)
+eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
+smart_import "infra-management/scripts/lib/logging.sh"
+smart_import "infra-management/scripts/lib/system.sh"
+smart_import "infra-management/scripts/lib/network.sh"
+smart_import "infra-management/scripts/lib/credentials.sh"
 
 # Parse parameters
 while [[ $# -gt 0 ]]; do
@@ -37,9 +40,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# Configuration - configurable like GIT_REF
-GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
 
 # Bootstrap directory for local vs remote usage
 if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
@@ -65,7 +65,7 @@ validate_environment() {
         log_error "[Phase 1a] ❌ GITHUB_TOKEN environment variable required"
         log_info ""
         log_info "Usage:"
-        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s --nodes=N --tier=SIZE"
+        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s -- --nodes=N --tier=SIZE [--skip-validation]"
         log_info ""
         log_info "Parameters:"
         log_info "  --nodes=N           Number of nodes (default: 1)"
@@ -101,34 +101,6 @@ validate_environment() {
     log_success "[Phase 1a] ✅ Resources validated: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
 }
 
-detect_architecture() { # Phase 0 has the same detection, can we extract it to a common lib to use here and there?
-    log_info "[Phase 1a] Detecting system architecture..."
-
-    local arch=$(uname -m)
-    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
-
-    case "$arch" in
-        x86_64) ARCH="amd64" ;;
-        arm64|aarch64) ARCH="arm64" ;;
-        *)
-            log_error "[Phase 1a] Unsupported architecture: $arch"
-            exit 1
-            ;;
-    esac
-
-    case "$os" in
-        linux) OS="linux" ;;
-        darwin) OS="darwin" ;;
-        *)
-            log_error "[Phase 1a] Unsupported operating system: $os"
-            exit 1
-            ;;
-    esac
-
-    log_success "[Phase 1a] ✅ Detected: $OS/$ARCH"
-    export DETECTED_ARCH="$ARCH"
-    export DETECTED_OS="$OS"
-}
 
 validate_kubectl_context() {
     local expected_context="$1"
@@ -521,7 +493,7 @@ main() {
 
     log_phase "🚀 Phase 1a: Environment Validation"
     validate_environment
-    detect_architecture
+    detect_system_architecture
 
     log_phase "🚀 Phase 1b: k3s Cluster Installation"
     install_k3s

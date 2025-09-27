@@ -19,6 +19,7 @@
 
 # Configuration
 GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
+GIT_REF="${GIT_REF:-main}"
 
 get_script_dir() {
     # Find the calling script (skip this imports.sh file)
@@ -66,7 +67,7 @@ smart_import() {
         source "$local_path"
     else
         # Production: use remote GitHub URL
-        local remote_url="https://raw.githubusercontent.com/${GITHUB_ORG}/${repo_name}/${GIT_REF:-main}/${lib_path#*/}"
+        local remote_url="https://raw.githubusercontent.com/${GITHUB_ORG}/${repo_name}/${GIT_REF}/${lib_path#*/}"
 
         [[ "${DEBUG_IMPORTS:-false}" == "true" ]] && echo "DEBUG: Importing remote: $remote_url" >&2
         eval "$(curl -sfL "$remote_url")"

@@ -9,7 +9,7 @@ Deploy a complete enterprise-grade Kubernetes platform with a single command fro
 ### One-Command Deployment
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 ```
 
 That's it! This single command will:
@@ -23,17 +23,17 @@ That's it! This single command will:
 
 ### Single Node Deployment (Default)
 ```bash
-curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 ```
 
 ### Multi-Node Production Deployment
 ```bash
-curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=3 --tier=medium
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=3 --tier=medium
 ```
 
 ### Enterprise Scale Deployment
 ```bash
-curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=10 --tier=large
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=10 --tier=large
 ```
 
 ## 🧪 Individual Phase Testing
@@ -43,7 +43,7 @@ For development and troubleshooting, each phase can be tested independently:
 ### **Phase 0: Environment + Tools**
 ```bash
 # Standalone testing (full validation)
-curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s -- --nodes=1 --tier=small
 
 # Called from main bootstrap (skip redundant validation)
 ./scripts/bootstrap-phase0.sh --nodes=1 --tier=small --skip-validation
@@ -52,7 +52,7 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 ### **Phase 1: k3s + Bootstrap Storage**
 ```bash
 # Standalone testing (includes environment validation)
-curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s -- --nodes=1 --tier=small
 
 # Called from main bootstrap (skip Phase 0 validation)
 ./scripts/bootstrap-phase1.sh --nodes=1 --tier=small --skip-validation

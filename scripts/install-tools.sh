@@ -3,11 +3,15 @@
 
 # Remove set -e to prevent silent exits - we want to see errors
 
-# Load import utility and logging library (bash 3.2+ compatible)
-# Propagate LOG_LEVEL from environment if not set
+# Configuration - set defaults before imports
+GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
+GIT_REF="${GIT_REF:-main}"
 export LOG_LEVEL="${LOG_LEVEL:-INFO}"
-eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/lib/imports.sh)"
+
+# Load import utility and logging library (bash 3.2+ compatible)
+eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
+smart_import "infra-management/scripts/lib/system.sh"
 smart_import "infra-management/scripts/lib/network.sh"
 
 log_debug "Install tools script starting with LOG_LEVEL=$LOG_LEVEL"
@@ -20,20 +24,6 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Get normalized OS name
-get_os() {
-    uname -s | tr '[:upper:]' '[:lower:]'
-}
-
-# Get normalized architecture name
-get_arch() {
-    local arch=$(uname -m)
-    case "$arch" in
-        x86_64) echo "amd64" ;;
-        arm64|aarch64) echo "arm64" ;;
-        *) log_error "Unsupported architecture: $arch"; return 1 ;;
-    esac
-}
 
 # Extract and install binary from zip file
 # Usage: extract_and_install_binary ZIP_FILE BINARY_NAME [TARGET_DIR]
@@ -122,8 +112,6 @@ install_kubectl() {
     log_info "Installing kubectl"
 
     # Detect OS and architecture
-    local OS=$(get_os)
-    local ARCH=$(get_arch) || return 1
 
     # Get latest stable version with error handling
     KUBECTL_VERSION=$(curl_with_retry "https://dl.k8s.io/release/stable.txt")
@@ -133,7 +121,7 @@ install_kubectl() {
     fi
 
     # Download and install kubectl using our retry function
-    local KUBECTL_URL="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS}/${ARCH}/kubectl"
+    local KUBECTL_URL="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${DETECTED_OS}/${DETECTED_ARCH}/kubectl"
 
     if curl_with_retry "$KUBECTL_URL" "kubectl"; then
         chmod +x kubectl
@@ -200,11 +188,9 @@ install_terraform() {
     log_info "Installing Terraform"
 
     local TERRAFORM_VERSION="${TERRAFORM_VERSION:-1.6.6}"
-    local OS=$(get_os)
-    local ARCH=$(get_arch) || return 1
 
     # Download and install Terraform with retry logic
-    local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${OS}_${ARCH}.zip"
+    local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${DETECTED_OS}_${DETECTED_ARCH}.zip"
     local TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
 
     if curl_with_retry "$TERRAFORM_URL" "$TERRAFORM_ZIP"; then
@@ -226,11 +212,9 @@ install_vault_cli() {
     log_info "Installing Vault CLI"
 
     local VAULT_VERSION="${VAULT_VERSION:-1.15.2}"
-    local OS=$(get_os)
-    local ARCH=$(get_arch) || return 1
 
     # Download and install Vault CLI
-    local VAULT_ZIP="vault_${VAULT_VERSION}_${OS}_${ARCH}.zip"
+    local VAULT_ZIP="vault_${VAULT_VERSION}_${DETECTED_OS}_${DETECTED_ARCH}.zip"
     local VAULT_URL="https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
 
     if curl_with_retry "$VAULT_URL" "$VAULT_ZIP"; then
@@ -303,12 +287,15 @@ verify_tools() {
 # Main installation function
 main() {
     print_banner "🔧 Bootstrap Tool Installation" "Installing enterprise platform tools"
-    
+
+    # Detect system architecture first (required for downloads)
+    detect_system_architecture
+
     # Check if running as root (some tools need sudo)
     if [ "$EUID" -eq 0 ]; then
         log_warning "Running as root. Some installations may behave differently."
     fi
-    
+
     # Install tools in order
     install_system_tools
     install_kubectl
@@ -339,8 +326,8 @@ validate_tools() {
 
     # System information
     log_info "📋 System Information:"
-    log_info "  • OS: $(uname -s) (normalized: $(get_os))"
-    log_info "  • Architecture: $(uname -m) (normalized: $(get_arch))"
+    log_info "  • OS: $(uname -s) (normalized: $DETECTED_OS)"
+    log_info "  • Architecture: $(uname -m) (normalized: $DETECTED_ARCH)"
     log_info "  • Kernel: $(uname -r)"
     log_info "  • User: $(whoami)"
     log_info "  • Working Directory: $(pwd)"

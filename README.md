@@ -8,7 +8,7 @@ Deploy enterprise-ready Kubernetes platform from any Linux machine:
 
 ```bash
 # Single command bootstrap - enterprise-ready Day 1
-curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s --nodes=1 --tier=small
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 ```
 
 **Current Status**: Phases 0-1 complete and secure. Phases 2-4 planned for full GitOps integration.
