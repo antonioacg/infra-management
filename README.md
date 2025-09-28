@@ -17,8 +17,8 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 
 1. ✅ **Phase 0**: Environment validation and tool installation
 2. ✅ **Phase 1**: k3s cluster + bootstrap storage (MinIO, PostgreSQL) with LOCAL state
-3. ⏳ **Phase 2**: State migration + Vault + External Secrets + Networking (REMOTE state)
-4. ⏳ **Phase 3**: Vault initialization, unsealing, and security policies
+3. ⏳ **Phase 2**: State migration + Vault (SoftHSMv2 auto-unseal) + External Secrets + Networking (REMOTE state)
+4. ⏳ **Phase 3**: Advanced Vault policies and security configuration
 5. ⏳ **Phase 4**: GitOps activation with Flux
 
 **Enterprise Scaling**: `--nodes=1 --tier=small` to `--nodes=10 --tier=large` with same command

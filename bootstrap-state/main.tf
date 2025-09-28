@@ -1,6 +1,6 @@
 # Bootstrap State Infrastructure - Phase 1 ONLY
-# Purpose: Minimal infrastructure for Terraform state backend
-# Creates: k3s + MinIO + PostgreSQL ONLY - NO Vault (Phase 2)
+# Purpose: Foundation infrastructure for enterprise platform
+# Creates: k3s + MinIO + PostgreSQL ONLY (foundation only)
 
 terraform {
   required_version = ">= 1.0"

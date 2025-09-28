@@ -34,6 +34,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_VALIDATION=true
             shift
             ;;
+        --preserve-credentials)
+            PRESERVE_CREDENTIALS=true
+            shift
+            ;;
         *)
             log_error "Unknown parameter: $1"
             exit 1
@@ -69,9 +73,10 @@ _validate_environment() {
         log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s -- --nodes=N --tier=SIZE [--skip-validation]"
         log_info ""
         log_info "Parameters:"
-        log_info "  --nodes=N           Number of nodes (default: 1)"
-        log_info "  --tier=SIZE         Resource tier: small|medium|large (default: small)"
-        log_info "  --skip-validation   Skip environment validation (when called from main bootstrap)"
+        log_info "  --nodes=N              Number of nodes (default: 1)"
+        log_info "  --tier=SIZE            Resource tier: small|medium|large (default: small)"
+        log_info "  --skip-validation      Skip environment validation (when called from main bootstrap)"
+        log_info "  --preserve-credentials Preserve credentials for orchestrated execution"
         log_info ""
         log_info "Note: Use GITHUB_TOKEN=\"test\" for Phase 1 testing"
         exit 1
@@ -438,8 +443,8 @@ _cleanup_on_error() {
     local exit_code=$?
     local line_number=$1
 
-    # Clear credentials from memory (security best practice)
-    log_info "[Phase 1] Clearing credentials from memory..."
+    # Clear credentials from memory on error (security critical)
+    log_info "[Phase 1] Clearing credentials from memory (error cleanup)..."
     clear_bootstrap_credentials
 
     # Clean up temporary directory in remote mode
@@ -530,9 +535,16 @@ main() {
 
     log_phase "🚀 Phase 1: Complete!"
 
-    # Clear credentials from memory (security best practice)
-    log_info "[Phase 1] Clearing credentials from memory..."
-    clear_bootstrap_credentials
+    # Conditional credential cleanup
+    if [[ "$PRESERVE_CREDENTIALS" == "true" ]]; then
+        log_info "[Phase 1] 🔒 Preserving credentials for orchestrated execution"
+        log_info "[Phase 1] ⚠️  Credentials will be cleared by orchestrator after Phase 2"
+        log_info "[Phase 1] ℹ️  This is only safe when called from bootstrap.sh orchestrator"
+    else
+        # Standalone execution - clear credentials for security
+        log_info "[Phase 1] 🔒 Clearing credentials from memory (standalone execution)..."
+        clear_bootstrap_credentials
+    fi
 
     print_success_message
 
