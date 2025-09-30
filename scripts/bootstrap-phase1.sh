@@ -577,18 +577,12 @@ _verify_bootstrap_foundation() {
         log_warning "[Phase 1c] MinIO connectivity test skipped (mc not available in container)"
     }
 
-    # Create terraform_locks database if it doesn't exist
-    log_info "[Phase 1c] Creating terraform_locks database..."
-    kubectl exec -n bootstrap statefulset/bootstrap-postgresql -- bash -c "PGPASSWORD='$POSTGRES_PASSWORD' psql -U postgres -c 'CREATE DATABASE terraform_locks;'" 2>/dev/null || {
-        log_debug "[Phase 1c] Database terraform_locks already exists or creation failed (expected if already exists)"
-    }
-
-    # Test PostgreSQL connectivity
-    log_info "[Phase 1c] Testing PostgreSQL connectivity..."
-    kubectl exec -n bootstrap statefulset/bootstrap-postgresql -- bash -c "PGPASSWORD='$POSTGRES_PASSWORD' psql -U postgres -d terraform_locks -c 'SELECT 1;'" >/dev/null && {
+    # Verify terraform_locks database (CloudNativePG creates it via initdb bootstrap)
+    log_info "[Phase 1c] Verifying terraform_locks database..."
+    kubectl exec -n bootstrap bootstrap-postgresql-1 -- bash -c "PGPASSWORD='$POSTGRES_PASSWORD' psql -U postgres -d terraform_locks -c 'SELECT 1;'" >/dev/null 2>&1 && {
         log_success "[Phase 1c] PostgreSQL connectivity test successful"
     } || {
-        log_warning "[Phase 1c] PostgreSQL connectivity test failed"
+        log_warning "[Phase 1c] PostgreSQL connectivity test failed (database may still be initializing)"
     }
 
     # Show deployed components
