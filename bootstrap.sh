@@ -36,12 +36,48 @@ while [[ $# -gt 0 ]]; do
             START_PHASE="${1#*=}"
             shift
             ;;
+        --help|-h)
+            echo "Enterprise Platform Bootstrap - Main Orchestrator"
+            echo "Single-command bootstrap that orchestrates all phases"
+            echo ""
+            echo "Usage:"
+            echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --nodes=N            Number of nodes (default: 1)"
+            echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
+            echo "  --environment=ENV    Environment: production|staging|development (default: production)"
+            echo "  --start-phase=N      Start from specific phase (default: 0)"
+            echo "  --help, -h           Show this help message"
+            echo ""
+            echo "Phases:"
+            echo "  Phase 0: Tool installation and environment validation"
+            echo "  Phase 1: k3s cluster + bootstrap storage (LOCAL state)"
+            echo "  Phase 2: State migration + infrastructure (REMOTE state)"
+            echo ""
+            echo "Environment Variables:"
+            echo "  GITHUB_TOKEN        GitHub token (required)"
+            echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
+            echo ""
+            echo "Examples:"
+            echo "  # Full bootstrap from scratch"
+            echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- --nodes=1 --tier=small"
+            echo ""
+            echo "  # Skip Phase 0 (tools already installed)"
+            echo "  curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- --nodes=1 --tier=small --start-phase=1"
+            echo ""
+            exit 0
+            ;;
         *)
-            log_error "Unknown parameter: $1"
-            log_info "Usage: --nodes=N --tier=SIZE --environment=ENV [--start-phase=N]"
-            log_info "  --environment=production|staging|development (default: production)"
-            log_info "  --start-phase=0  Start from Phase 0 (default)"
-            log_info "  --start-phase=1  Start from Phase 1 (skip Phase 0)"
+            echo "Error: Unknown parameter: $1"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo "  --nodes=N            Number of nodes (default: 1)"
+            echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
+            echo "  --environment=ENV    Environment name (default: production)"
+            echo "  --start-phase=N      Start from specific phase (default: 0)"
+            echo "  --help, -h           Show this help message"
+            echo ""
             exit 1
             ;;
     esac
@@ -50,12 +86,10 @@ done
 # Validate GitHub token
 if [[ -z "$GITHUB_TOKEN" ]]; then
     log_error "GITHUB_TOKEN environment variable required"
-    log_info ""
-    log_info "Usage:"
-    log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/bootstrap.sh | GITHUB_TOKEN=\"ghp_xxx\" bash -s -- --nodes=N --tier=SIZE --environment=ENV"
-    log_info ""
-    log_info "Get token at: https://github.com/settings/tokens"
-    log_info "Required scopes: repo, workflow"
+    echo ""
+    echo "Run: $0 --help for usage information"
+    echo "Get token at: https://github.com/settings/tokens (scopes: repo, workflow)"
+    echo ""
     exit 1
 fi
 

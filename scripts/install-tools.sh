@@ -25,7 +25,6 @@ _command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-
 # Usage: _extract_and_install_binary ZIP_FILE BINARY_NAME [TARGET_DIR]
 # PRIVATE: Extract and install binary from downloaded archive
 _extract_and_install_binary() {
@@ -59,10 +58,16 @@ _extract_and_install_binary() {
     fi
 }
 
-# Function to install a package using appropriate package manager
-install_package() {
+# PRIVATE: Install a package using appropriate package manager
+_install_package() {
     local package="$1"
-    
+
+    # macOS doesn't support most Linux system packages
+    if [[ "$DETECTED_OS" == "darwin" ]]; then
+        log_warning "Package installation not supported on macOS - skipping $package"
+        return 0
+    fi
+
     if _command_exists brew; then
         # macOS with Homebrew
         brew install "$package"
@@ -86,16 +91,16 @@ install_package() {
     fi
 }
 
-# Install basic system tools
-install_system_tools() {
+# PRIVATE: Install basic system tools
+_install_system_tools() {
     log_info "Installing basic system tools"
-    
-    local tools=("curl" "wget" "git" "jq" "unzip")
-    
+
+    local tools=("curl" "wget" "git" "jq" "unzip" "cryptsetup")
+
     for tool in "${tools[@]}"; do
         if ! _command_exists "$tool"; then
             log_info "Installing $tool"
-            install_package "$tool"
+            _install_package "$tool"
             log_success "$tool installed"
         else
             log_success "$tool already installed"
@@ -103,8 +108,8 @@ install_system_tools() {
     done
 }
 
-# Install kubectl
-install_kubectl() {
+# PRIVATE: Install kubectl
+_install_kubectl() {
     if _command_exists kubectl; then
         log_success "kubectl already installed ($(kubectl version --client --short 2>/dev/null || echo 'version unknown'))"
         return 0
@@ -139,8 +144,8 @@ install_kubectl() {
     log_success "kubectl ${KUBECTL_VERSION} installed"
 }
 
-# Install Flux CLI
-install_flux() {
+# PRIVATE: Install Flux CLI
+_install_flux() {
     if _command_exists flux; then
         log_success "Flux CLI already installed ($(flux version --client 2>/dev/null | grep 'flux version' || echo 'version unknown'))"
         return 0
@@ -158,8 +163,8 @@ install_flux() {
     
 }
 
-# Install Helm
-install_helm() {
+# PRIVATE: Install Helm
+_install_helm() {
     if _command_exists helm; then
         log_success "Helm already installed ($(helm version --short 2>/dev/null || echo 'version unknown'))"
         return 0
@@ -178,9 +183,8 @@ install_helm() {
     log_success "Helm installed"
 }
 
-
-# Install Terraform
-install_terraform() {
+# PRIVATE: Install Terraform
+_install_terraform() {
     if _command_exists terraform; then
         log_success "Terraform already installed ($(terraform version -json 2>/dev/null | jq -r .terraform_version || echo 'version unknown'))"
         return 0
@@ -203,8 +207,8 @@ install_terraform() {
     log_success "Terraform ${TERRAFORM_VERSION} installed"
 }
 
-# Install Vault CLI (optional, for debugging)
-install_vault_cli() {
+# PRIVATE: Install Vault CLI (optional, for debugging)
+_install_vault_cli() {
     if _command_exists vault; then
         log_success "Vault CLI already installed ($(vault version 2>/dev/null | head -1 || echo 'version unknown'))"
         return 0
@@ -227,8 +231,8 @@ install_vault_cli() {
     log_success "Vault CLI ${VAULT_VERSION} installed"
 }
 
-# Install yq (YAML processor)
-install_yq() {
+# PRIVATE: Install yq (YAML processor)
+_install_yq() {
     if _command_exists yq; then
         log_success "yq already installed ($(yq --version 2>/dev/null || echo 'version unknown'))"
         return
@@ -250,7 +254,6 @@ install_yq() {
         return 1
     fi
 }
-
 
 # Verify installations
 verify_tools() {
@@ -298,13 +301,13 @@ main() {
     fi
 
     # Install tools in order
-    install_system_tools
-    install_kubectl
-    install_helm
-    install_flux
-    install_terraform
-    install_yq
-    install_vault_cli  # Optional
+    _install_system_tools
+    _install_kubectl
+    _install_helm
+    _install_flux
+    _install_terraform
+    _install_yq
+    _install_vault_cli  # Optional
     
     echo ""
     verify_tools
@@ -321,7 +324,7 @@ main() {
 }
 
 # Validation function for current state
-validate_tools() {
+_validate_tools() {
     log_info "🔍 Tool Installation Validation Report"
     echo ""
 
@@ -400,15 +403,18 @@ validate_tools() {
     echo ""
 }
 
-# Parse command line arguments
-parse_args() {
+# Run main function if script is executed directly
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --validate)
-                validate_tools
+                _validate_tools
                 exit 0
                 ;;
             --help|-h)
+                echo "Enterprise Platform Tool Installation"
+                echo ""
                 echo "Usage: $0 [OPTIONS]"
                 echo ""
                 echo "Options:"
@@ -416,24 +422,24 @@ parse_args() {
                 echo "  --help, -h    Show this help message"
                 echo ""
                 echo "Environment Variables:"
-                echo "  LOG_LEVEL     Set logging level (ERROR|WARN|INFO|DEBUG|TRACE)"
-                echo "  USE_LOCAL_IMPORTS=true    Use local filesystem instead of remote imports"
-                echo "  DEBUG_IMPORTS=true        Show import resolution details"
+                echo "  LOG_LEVEL             Set logging level (ERROR|WARN|INFO|DEBUG|TRACE)"
+                echo "  USE_LOCAL_IMPORTS     Use local filesystem instead of remote imports"
+                echo "  DEBUG_IMPORTS         Show import resolution details"
                 echo ""
                 exit 0
                 ;;
             *)
-                log_error "Unknown option: $1"
-                echo "Use --help for usage information"
+                echo "Error: Unknown option: $1"
+                echo ""
+                echo "Usage: $0 [OPTIONS]"
+                echo "  --validate    Show current tool status"
+                echo "  --help, -h    Show this help message"
+                echo ""
                 exit 1
                 ;;
         esac
         shift
     done
-}
 
-# Run main function if script is executed directly
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-    parse_args "$@"
     main
 fi

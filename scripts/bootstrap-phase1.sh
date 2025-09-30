@@ -38,8 +38,36 @@ while [[ $# -gt 0 ]]; do
             PRESERVE_CREDENTIALS=true
             shift
             ;;
+        --help|-h)
+            echo "Enterprise Platform Bootstrap - Phase 1"
+            echo "k3s cluster + Bootstrap Storage (LOCAL state)"
+            echo ""
+            echo "Usage:"
+            echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s -- [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --nodes=N                Number of nodes (default: 1)"
+            echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
+            echo "  --skip-validation        Skip environment validation (when called from main bootstrap)"
+            echo "  --preserve-credentials   Preserve credentials for orchestrated execution"
+            echo "  --help, -h               Show this help message"
+            echo ""
+            echo "Environment Variables:"
+            echo "  GITHUB_TOKEN        GitHub token (use \"test\" for Phase 1 testing)"
+            echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
+            echo ""
+            exit 0
+            ;;
         *)
-            log_error "Unknown parameter: $1"
+            echo "Error: Unknown parameter: $1"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo "  --nodes=N                Number of nodes (default: 1)"
+            echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
+            echo "  --skip-validation        Skip environment validation"
+            echo "  --preserve-credentials   Preserve credentials for orchestration"
+            echo "  --help, -h               Show this help message"
+            echo ""
             exit 1
             ;;
     esac
@@ -68,17 +96,9 @@ _validate_environment() {
     # Check GitHub token (allow "test" for Phase 1 testing)
     if [[ -z "$GITHUB_TOKEN" ]]; then
         log_error "[Phase 1a] ❌ GITHUB_TOKEN environment variable required"
-        log_info ""
-        log_info "Usage:"
-        log_info "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s -- --nodes=N --tier=SIZE [--skip-validation]"
-        log_info ""
-        log_info "Parameters:"
-        log_info "  --nodes=N              Number of nodes (default: 1)"
-        log_info "  --tier=SIZE            Resource tier: small|medium|large (default: small)"
-        log_info "  --skip-validation      Skip environment validation (when called from main bootstrap)"
-        log_info "  --preserve-credentials Preserve credentials for orchestrated execution"
-        log_info ""
-        log_info "Note: Use GITHUB_TOKEN=\"test\" for Phase 1 testing"
+        echo ""
+        echo "Run: $0 --help for usage information"
+        echo ""
         exit 1
     fi
 
@@ -107,6 +127,109 @@ _validate_environment() {
     log_success "[Phase 1a] ✅ Resources validated: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
 }
 
+# PRIVATE: Setup node encryption for k3s data directory using LUKS container
+_setup_node_encryption() {
+    log_phase "Security" "Setting up LUKS container encryption for k3s data"
+
+    # Check if k3s is already running and stop it for encryption setup
+    if sudo systemctl is-active --quiet k3s 2>/dev/null; then
+        log_info "[Phase 1a] Stopping existing k3s for encryption setup..."
+        sudo systemctl stop k3s
+        # Unmount k3s directory if it's already mounted
+        sudo umount /var/lib/rancher/k3s 2>/dev/null || true
+        # Close any existing LUKS container
+        sudo cryptsetup luksClose k3s_encrypted 2>/dev/null || true
+    fi
+
+    # Check if encryption is already set up
+    if mount | grep -q "/dev/mapper/k3s_encrypted.*rancher/k3s"; then
+        log_success "[Phase 1a] ✅ LUKS container encryption already configured"
+        return 0
+    fi
+
+    # Check if cryptsetup is available (should be installed by Phase 0)
+    if ! command -v cryptsetup >/dev/null; then
+        # Check if we're on macOS where cryptsetup isn't available
+        if [[ "$DETECTED_OS" == "darwin" ]]; then
+            log_warning "[Phase 1a] LUKS encryption not available on macOS - skipping node encryption"
+            log_info "[Phase 1a] k3s data will not be encrypted on macOS (development only)"
+            return 0
+        else
+            log_error "[Phase 1a] cryptsetup not found - ensure Phase 0 tool installation completed"
+            log_info "[Phase 1a] Run: ./scripts/bootstrap-phase0.sh --nodes=${NODE_COUNT} --tier=${RESOURCE_TIER}"
+            exit 1
+        fi
+    fi
+
+    # Generate encryption passphrase
+    log_info "[Phase 1a] Generating encryption passphrase..."
+    local luks_passphrase=$(openssl rand -base64 32)
+
+    # Set container size based on resource tier
+    local container_size
+    case "$RESOURCE_TIER" in
+        "small")  container_size="5G" ;;
+        "medium") container_size="20G" ;;
+        "large")  container_size="50G" ;;
+        *)        container_size="10G" ;;
+    esac
+
+    # Create encrypted container file
+    local container_file="/var/lib/rancher-k3s-encrypted.img"
+    log_info "[Phase 1a] Creating LUKS container (${container_size})..."
+
+    sudo mkdir -p /var/lib
+    sudo dd if=/dev/zero of="$container_file" bs=1M count=1 seek=$((${container_size%G} * 1024 - 1)) status=none
+
+    # Format as LUKS container
+    log_info "[Phase 1a] Formatting LUKS container..."
+    echo "${luks_passphrase}" | sudo cryptsetup luksFormat "$container_file" --batch-mode --cipher aes-xts-plain64 --key-size 512 --hash sha512
+
+    # Open LUKS container
+    log_info "[Phase 1a] Opening LUKS container..."
+    echo "${luks_passphrase}" | sudo cryptsetup luksOpen "$container_file" k3s_encrypted
+
+    # Create filesystem in container
+    log_info "[Phase 1a] Creating filesystem in encrypted container..."
+    sudo mkfs.ext4 /dev/mapper/k3s_encrypted >/dev/null 2>&1
+
+    # Create mount point and mount
+    sudo mkdir -p /var/lib/rancher/k3s
+    sudo mount /dev/mapper/k3s_encrypted /var/lib/rancher/k3s
+
+    # Set proper ownership
+    sudo chown root:root /var/lib/rancher/k3s
+    sudo chmod 755 /var/lib/rancher/k3s
+
+    # Add to fstab for persistence (container will need manual unlock after reboot)
+    if ! grep -q "k3s_encrypted" /etc/fstab; then
+        log_info "[Phase 1a] Adding encrypted mount to fstab..."
+        echo "/dev/mapper/k3s_encrypted /var/lib/rancher/k3s ext4 defaults,noauto 0 2" | sudo tee -a /etc/fstab >/dev/null
+        log_warning "[Phase 1a] ⚠️  LUKS container requires manual unlock after reboot"
+        log_info "[Phase 1a] Unlock command: cryptsetup luksOpen $container_file k3s_encrypted"
+    fi
+
+    # Verify encryption is working
+    if mount | grep -q "/dev/mapper/k3s_encrypted.*rancher/k3s"; then
+        log_success "[Phase 1a] ✅ LUKS container encryption configured - all k3s data will be encrypted at rest"
+
+        # Test write/read to verify container
+        echo "encryption-test" | sudo tee /var/lib/rancher/k3s/test-file >/dev/null
+        if [[ -f /var/lib/rancher/k3s/test-file ]]; then
+            sudo rm -f /var/lib/rancher/k3s/test-file
+            log_success "[Phase 1a] ✅ LUKS container verified working"
+        else
+            log_error "[Phase 1a] ❌ LUKS container test failed"
+            exit 1
+        fi
+    else
+        log_error "[Phase 1a] ❌ Failed to mount LUKS container"
+        exit 1
+    fi
+
+    # Clear the passphrase from memory for security
+    unset luks_passphrase
+}
 
 # PRIVATE: Validate kubectl context is not conflicting with existing k3s installations
 _validate_kubectl_context() {
@@ -485,12 +608,14 @@ _get_current_phase() {
     fi
 }
 
-print_success_message() {
+# PRIVATE: Print final success message with next steps
+_print_success_message() {
     log_info ""
     log_success "[Phase 1] 🎉 PHASE 1 COMPLETE!"
     log_info ""
     log_info "[Phase 1] Bootstrap Foundation: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
-    log_success "[Phase 1]   ✅ k3s cluster installed and ready"
+    log_success "[Phase 1]   ✅ Node storage encrypted (LUKS container)"
+    log_success "[Phase 1]   ✅ k3s cluster installed on encrypted storage"
     log_success "[Phase 1]   ✅ MinIO S3-compatible storage deployed"
     log_success "[Phase 1]   ✅ PostgreSQL state locking deployed"
     log_success "[Phase 1]   ✅ LOCAL terraform.tfstate created"
@@ -524,7 +649,10 @@ main() {
     _validate_environment
     detect_system_architecture
 
-    log_phase "🚀 Phase 1b: k3s Cluster Installation"
+    log_phase "🚀 Phase 1a: Node Encryption Setup"
+    _setup_node_encryption
+
+    log_phase "🚀 Phase 1b: k3s Cluster Installation on Encrypted Storage"
     _install_k3s
     _validate_cluster
 
@@ -546,7 +674,7 @@ main() {
         clear_bootstrap_credentials
     fi
 
-    print_success_message
+    _print_success_message
 
     # Clean up temporary directory in remote mode
     if [[ "${USE_LOCAL_IMPORTS:-false}" != "true" && -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then

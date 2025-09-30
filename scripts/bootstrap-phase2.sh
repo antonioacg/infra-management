@@ -45,10 +45,35 @@ while [[ $# -gt 0 ]]; do
             SKIP_VALIDATION=true
             shift
             ;;
+        --help|-h)
+            echo "Enterprise Platform Bootstrap - Phase 2"
+            echo "State Migration + Infrastructure Deployment"
+            echo ""
+            echo "Usage:"
+            echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase2.sh | bash -s -- [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --nodes=N            Number of nodes (default: 1)"
+            echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
+            echo "  --environment=ENV    Environment name (default: production)"
+            echo "  --skip-validation    Skip environment validation (when called from main bootstrap)"
+            echo "  --help, -h           Show this help message"
+            echo ""
+            echo "Environment Variables:"
+            echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
+            echo ""
+            exit 0
+            ;;
         *)
-            log_error "Unknown parameter: $1"
-            log_info "Usage: --nodes=N --tier=SIZE --environment=ENV [--skip-validation]"
-            log_info "  --environment=production|staging|development (default: production)"
+            echo "Error: Unknown parameter: $1"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo "  --nodes=N            Number of nodes (default: 1)"
+            echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
+            echo "  --environment=ENV    Environment name (default: production)"
+            echo "  --skip-validation    Skip environment validation"
+            echo "  --help, -h           Show this help message"
+            echo ""
             exit 1
             ;;
     esac

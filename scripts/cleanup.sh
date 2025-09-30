@@ -18,11 +18,13 @@ smart_import "infra-management/scripts/install-tools.sh"
 
 log_debug "Cleanup script starting with LOG_LEVEL=$LOG_LEVEL"
 
-cleanup_banner() {
+# PRIVATE: Print cleanup banner
+_cleanup_banner() {
     print_banner "🧹 Enterprise Homelab Cleanup" "⚠️  DESTRUCTIVE OPERATION"
 }
 
-confirm_cleanup() {
+# PRIVATE: Confirm cleanup operation
+_confirm_cleanup() {
     echo
     log_warning "This will completely remove:"
     echo "  • k3s cluster and all data"
@@ -159,6 +161,39 @@ _cleanup_kubectl_config() {
         fi
     else
         log_debug "No contexts were removed"
+    fi
+}
+
+# PRIVATE: Cleanup LUKS encrypted container
+_cleanup_luks_container() {
+    log_debug "Checking for LUKS encrypted container..."
+
+    # Check if LUKS container is mounted
+    if mount | grep -q "/dev/mapper/k3s_encrypted"; then
+        log_info "Unmounting LUKS encrypted container..."
+        sudo umount /var/lib/rancher/k3s 2>/dev/null || true
+        log_success "LUKS container unmounted"
+    fi
+
+    # Check if LUKS container device exists and close it
+    if [[ -b /dev/mapper/k3s_encrypted ]]; then
+        log_info "Closing LUKS container..."
+        sudo cryptsetup luksClose k3s_encrypted 2>/dev/null || true
+        log_success "LUKS container closed"
+    fi
+
+    # Remove LUKS container file
+    if [[ -f /var/lib/rancher-k3s-encrypted.img ]]; then
+        log_info "Removing LUKS container file..."
+        sudo rm -f /var/lib/rancher-k3s-encrypted.img
+        log_success "LUKS container file removed"
+    fi
+
+    # Remove fstab entry for LUKS container
+    if grep -q "k3s_encrypted" /etc/fstab 2>/dev/null; then
+        log_info "Removing LUKS mount from fstab..."
+        sudo sed -i.bak '/k3s_encrypted/d' /etc/fstab
+        log_success "fstab entry removed"
     fi
 }
 
@@ -352,36 +387,14 @@ print_success() {
 }
 
 main() {
-    # Parse arguments
-    local force_cleanup=false
-    local kubectl_contexts=""
+    local force_cleanup="$1"
+    local kubectl_contexts="$2"
 
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --force)
-                force_cleanup=true
-                shift
-                ;;
-            --contexts=*)
-                kubectl_contexts="${1#*=}"
-                shift
-                ;;
-            *)
-                log_error "Unknown parameter: $1"
-                echo "Usage: $0 [--force] [--contexts=context1,context2,...]"
-                echo "  --force      Skip confirmation prompts"
-                echo "  --contexts   Comma-separated list of kubectl contexts to remove"
-                echo "               Default: automatically finds k3s-default* contexts"
-                exit 1
-                ;;
-        esac
-    done
-
-    cleanup_banner
+    _cleanup_banner
 
     # Skip confirmation if --force flag is provided
     if [[ "$force_cleanup" != "true" ]]; then
-        confirm_cleanup
+        _confirm_cleanup
     fi
 
     log_info "Starting cleanup process..."
@@ -389,6 +402,7 @@ main() {
     _cleanup_processes
     _cleanup_kubectl_config "$kubectl_contexts"
     _cleanup_k3s
+    _cleanup_luks_container
     _cleanup_tools
     _cleanup_directories
 
@@ -400,9 +414,21 @@ main() {
     fi
 }
 
-# Handle command line arguments
-case "${1:-}" in
-    --help|-h)
+# Parse command line arguments
+force_cleanup=false
+kubectl_contexts=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --force)
+            force_cleanup=true
+            shift
+            ;;
+        --contexts=*)
+            kubectl_contexts="${1#*=}"
+            shift
+            ;;
+        --help|-h)
         echo "Enterprise Homelab Cleanup Script"
         echo
         echo "Usage:"
@@ -441,7 +467,18 @@ case "${1:-}" in
         exit 0
         ;;
     *)
-        # Pass all arguments to main function for proper parsing
-        main "$@"
+        echo "Error: Unknown parameter: $1"
+        echo ""
+        echo "Usage: $0 [OPTIONS]"
+        echo "  --force        Skip confirmation prompt"
+        echo "  --contexts     Comma-separated list of kubectl contexts to remove"
+        echo "  --help, -h     Show this help message"
+        echo ""
+        exit 1
         ;;
-esac
+    esac
+    shift
+done
+
+# Run main cleanup with parsed parameters
+main "$force_cleanup" "$kubectl_contexts"
