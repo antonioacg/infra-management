@@ -511,15 +511,52 @@ _deploy_bootstrap_storage() {
     terraform init
 
     log_info "[Phase 1c] Planning bootstrap infrastructure..."
-    terraform plan -out=tfplan
 
-    log_info "[Phase 1c] Applying bootstrap infrastructure..."
-    terraform apply tfplan
+    # Retry terraform apply to handle transient network errors (helm chart downloads)
+    local max_attempts=3
+    local attempt=1
+    local apply_success=false
 
-    # Clean up plan file immediately after use
-    rm -f tfplan
+    while [[ $attempt -le $max_attempts ]]; do
+        local plan_file="tfplan-attempt${attempt}"
 
-    log_success "[Phase 1c] ✅ Bootstrap storage deployed"
+        if [[ $attempt -gt 1 ]]; then
+            log_warning "[Phase 1c] Retry attempt $attempt/$max_attempts after previous failure..."
+            sleep 5
+        fi
+
+        log_info "[Phase 1c] Creating plan: $plan_file"
+        if ! terraform plan -out="$plan_file"; then
+            log_error "[Phase 1c] Terraform plan failed on attempt $attempt"
+            rm -f "$plan_file"
+            if [[ $attempt -eq $max_attempts ]]; then
+                return 1
+            fi
+            ((attempt++))
+            continue
+        fi
+
+        log_info "[Phase 1c] Applying plan: $plan_file"
+        if terraform apply "$plan_file"; then
+            apply_success=true
+            # Clean up plan files after successful apply
+            rm -f tfplan-attempt*
+            break
+        else
+            log_warning "[Phase 1c] Terraform apply failed on attempt $attempt"
+            if [[ $attempt -eq $max_attempts ]]; then
+                log_error "[Phase 1c] Terraform apply failed after $max_attempts attempts"
+                # Keep plan files for debugging
+                log_info "[Phase 1c] Plan files preserved for debugging: tfplan-attempt*"
+                return 1
+            fi
+        fi
+        ((attempt++))
+    done
+
+    if [[ "$apply_success" == "true" ]]; then
+        log_success "[Phase 1c] ✅ Bootstrap storage deployed"
+    fi
 }
 
 # PRIVATE: Verify bootstrap foundation components are working
