@@ -80,14 +80,19 @@ resource "helm_release" "bootstrap_minio" {
 # PostgreSQL for state locking (ARM64 compatible)
 resource "helm_release" "bootstrap_postgresql" {
   name       = "bootstrap-postgresql"
-  repository = "https://charts.bitnami.com/bitnami"
+  repository = "oci://registry-1.docker.io/bitnamicharts"
   chart      = "postgresql"
   namespace  = "bootstrap"
-  version    = "13.2.24"
+  version    = "16.7.24"
 
   create_namespace = true
 
   values = [yamlencode({
+    image = {
+      registry   = "docker.io"
+      repository = "bitnamilegacy/postgresql"
+      tag        = "latest"
+    }
     auth = {
       postgresPassword = var.postgres_password
       database         = "terraform_locks"
