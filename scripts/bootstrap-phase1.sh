@@ -569,7 +569,7 @@ _verify_bootstrap_foundation() {
 
     # Wait for PostgreSQL to be ready
     log_info "[Phase 1c] Waiting for PostgreSQL to be ready..."
-    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=postgresql -n bootstrap --timeout=180s
+    kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=bootstrap-postgresql -n bootstrap --timeout=180s
 
     # Test MinIO connectivity (basic check)
     log_info "[Phase 1c] Testing MinIO S3 connectivity..."
