@@ -86,50 +86,68 @@ resource "helm_release" "cloudnative_pg_operator" {
   version    = "0.22.1"
 
   create_namespace = true
+  wait             = true
+  timeout          = 600
 
   depends_on = [kubernetes_namespace.bootstrap]
 }
 
 # PostgreSQL cluster for state locking (ARM64 compatible)
-resource "kubernetes_manifest" "bootstrap_postgresql" {
-  manifest = {
-    apiVersion = "postgresql.cnpg.io/v1"
-    kind       = "Cluster"
-    metadata = {
-      name      = "bootstrap-postgresql"
-      namespace = "bootstrap"
-    }
-    spec = {
-      instances = 1
+# Note: Deployed via null_resource because kubernetes_manifest validates CRDs at plan time
+resource "null_resource" "bootstrap_postgresql" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Wait for operator to be ready
+      echo "Waiting for CloudNativePG operator to be ready..."
+      for i in {1..60}; do
+        if kubectl get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+          echo "CloudNativePG CRDs are available"
+          break
+        fi
+        if [ $i -eq 60 ]; then
+          echo "Timeout waiting for CloudNativePG CRDs"
+          exit 1
+        fi
+        sleep 2
+      done
 
-      imageName = "ghcr.io/cloudnative-pg/postgresql:17.5"
+      # Create PostgreSQL cluster
+      cat <<EOF | kubectl apply -f -
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      metadata:
+        name: bootstrap-postgresql
+        namespace: bootstrap
+      spec:
+        instances: 1
+        imageName: ghcr.io/cloudnative-pg/postgresql:17.5
+        storage:
+          size: 8Gi
+          storageClass: local-path
+        bootstrap:
+          initdb:
+            database: terraform_locks
+            owner: postgres
+            secret:
+              name: bootstrap-postgresql-superuser
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 512Mi
+            cpu: 250m
+      EOF
 
-      storage = {
-        size         = "8Gi"
-        storageClass = "local-path"
-      }
+      # Wait for cluster to be ready
+      echo "Waiting for PostgreSQL cluster to be ready..."
+      kubectl wait --for=condition=Ready cluster/bootstrap-postgresql -n bootstrap --timeout=300s
+    EOT
+  }
 
-      bootstrap = {
-        initdb = {
-          database = "terraform_locks"
-          owner    = "postgres"
-          secret = {
-            name = "bootstrap-postgresql-superuser"
-          }
-        }
-      }
-
-      resources = {
-        requests = {
-          memory = "256Mi"
-          cpu    = "100m"
-        }
-        limits = {
-          memory = "512Mi"
-          cpu    = "250m"
-        }
-      }
-    }
+  provisioner "local-exec" {
+    when    = destroy
+    command = "kubectl delete cluster bootstrap-postgresql -n bootstrap --ignore-not-found=true || true"
   }
 
   depends_on = [
