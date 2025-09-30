@@ -77,32 +77,48 @@ resource "helm_release" "bootstrap_minio" {
   depends_on = [kubernetes_namespace.bootstrap]
 }
 
-# PostgreSQL for state locking (ARM64 compatible)
-resource "helm_release" "bootstrap_postgresql" {
-  name       = "bootstrap-postgresql"
-  repository = "oci://registry-1.docker.io/bitnamicharts"
-  chart      = "postgresql"
-  namespace  = "bootstrap"
-  version    = "16.7.24"
+# CloudNativePG Operator for PostgreSQL management
+resource "helm_release" "cloudnative_pg_operator" {
+  name       = "cloudnative-pg"
+  repository = "https://cloudnative-pg.github.io/charts"
+  chart      = "cloudnative-pg"
+  namespace  = "cnpg-system"
+  version    = "0.22.1"
 
   create_namespace = true
 
-  values = [yamlencode({
-    image = {
-      registry   = "docker.io"
-      repository = "bitnamilegacy/postgresql"
-      tag        = "latest"
+  depends_on = [kubernetes_namespace.bootstrap]
+}
+
+# PostgreSQL cluster for state locking (ARM64 compatible)
+resource "kubernetes_manifest" "bootstrap_postgresql" {
+  manifest = {
+    apiVersion = "postgresql.cnpg.io/v1"
+    kind       = "Cluster"
+    metadata = {
+      name      = "bootstrap-postgresql"
+      namespace = "bootstrap"
     }
-    auth = {
-      postgresPassword = var.postgres_password
-      database         = "terraform_locks"
-    }
-    primary = {
-      persistence = {
-        enabled      = true
+    spec = {
+      instances = 1
+
+      imageName = "ghcr.io/cloudnative-pg/postgresql:17.5"
+
+      storage = {
         size         = "8Gi"
         storageClass = "local-path"
       }
+
+      bootstrap = {
+        initdb = {
+          database = "terraform_locks"
+          owner    = "postgres"
+          secret = {
+            name = "bootstrap-postgresql-superuser"
+          }
+        }
+      }
+
       resources = {
         requests = {
           memory = "256Mi"
@@ -114,7 +130,28 @@ resource "helm_release" "bootstrap_postgresql" {
         }
       }
     }
-  })]
+  }
+
+  depends_on = [
+    kubernetes_namespace.bootstrap,
+    helm_release.cloudnative_pg_operator,
+    kubernetes_secret.bootstrap_postgresql_superuser
+  ]
+}
+
+# PostgreSQL superuser secret for CloudNativePG
+resource "kubernetes_secret" "bootstrap_postgresql_superuser" {
+  metadata {
+    name      = "bootstrap-postgresql-superuser"
+    namespace = "bootstrap"
+  }
+
+  data = {
+    username = base64encode("postgres")
+    password = base64encode(var.postgres_password)
+  }
+
+  type = "kubernetes.io/basic-auth"
 
   depends_on = [kubernetes_namespace.bootstrap]
 }
