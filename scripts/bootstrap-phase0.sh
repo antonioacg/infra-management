@@ -17,47 +17,49 @@ smart_import "infra-management/scripts/lib/logging.sh"
 smart_import "infra-management/scripts/lib/system.sh"
 smart_import "infra-management/scripts/install-tools.sh"
 
-# Parse parameters
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --nodes=*)
-            NODE_COUNT="${1#*=}"
-            shift
-            ;;
-        --tier=*)
-            RESOURCE_TIER="${1#*=}"
-            shift
-            ;;
-        --help|-h)
-            echo "Enterprise Platform Bootstrap - Phase 0"
-            echo "Environment validation, architecture detection, and tool installation"
-            echo ""
-            echo "Usage:"
-            echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN=\"test\" bash -s -- [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --nodes=N           Number of nodes (default: 1)"
-            echo "  --tier=SIZE         Resource tier: small|medium|large (default: small)"
-            echo "  --help, -h          Show this help message"
-            echo ""
-            echo "Environment Variables:"
-            echo "  GITHUB_TOKEN        GitHub token (use \"test\" for Phase 0 testing)"
-            echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
-            echo ""
-            exit 0
-            ;;
-        *)
-            echo "Error: Unknown parameter: $1"
-            echo ""
-            echo "Usage: $0 [OPTIONS]"
-            echo "  --nodes=N           Number of nodes (default: 1)"
-            echo "  --tier=SIZE         Resource tier: small|medium|large (default: small)"
-            echo "  --help, -h          Show this help message"
-            echo ""
-            exit 1
-            ;;
-    esac
-done
+# PRIVATE: Parse command-line parameters
+_parse_parameters() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --nodes=*)
+                NODE_COUNT="${1#*=}"
+                shift
+                ;;
+            --tier=*)
+                RESOURCE_TIER="${1#*=}"
+                shift
+                ;;
+            --help|-h)
+                echo "Enterprise Platform Bootstrap - Phase 0"
+                echo "Environment validation, architecture detection, and tool installation"
+                echo ""
+                echo "Usage:"
+                echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN=\"test\" bash -s -- [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --nodes=N           Number of nodes (default: 1)"
+                echo "  --tier=SIZE         Resource tier: small|medium|large (default: small)"
+                echo "  --help, -h          Show this help message"
+                echo ""
+                echo "Environment Variables:"
+                echo "  GITHUB_TOKEN        GitHub token (use \"test\" for Phase 0 testing)"
+                echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
+                echo ""
+                exit 0
+                ;;
+            *)
+                echo "Error: Unknown parameter: $1"
+                echo ""
+                echo "Usage: $0 [OPTIONS]"
+                echo "  --nodes=N           Number of nodes (default: 1)"
+                echo "  --tier=SIZE         Resource tier: small|medium|large (default: small)"
+                echo "  --help, -h          Show this help message"
+                echo ""
+                exit 1
+                ;;
+        esac
+    done
+}
 
 
 # PRIVATE: Validate environment prerequisites for Phase 0
@@ -225,5 +227,8 @@ main() {
     print_success_message
 }
 
-# Execute main function with all arguments
-main "$@"
+# Only run main when executed directly (not sourced via smart_import)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    _parse_parameters "$@"
+    main "$@"
+fi
