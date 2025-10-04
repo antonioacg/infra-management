@@ -18,6 +18,7 @@ NODE_COUNT=1
 RESOURCE_TIER="small"
 ENVIRONMENT="production"
 SKIP_VALIDATION=false
+STOP_AFTER=""
 
 # Load import utility and logging library (bash 3.2+ compatible)
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
@@ -45,6 +46,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_VALIDATION=true
             shift
             ;;
+        --stop-after=*)
+            STOP_AFTER="${1#*=}"
+            shift
+            ;;
         --help|-h)
             echo "Enterprise Platform Bootstrap - Phase 2"
             echo "State Migration + Infrastructure Deployment"
@@ -57,6 +62,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
             echo "  --environment=ENV    Environment name (default: production)"
             echo "  --skip-validation    Skip environment validation (when called from main bootstrap)"
+            echo "  --stop-after=PHASE   Stop after specific subphase: 2a|2b|2c|2d"
             echo "  --help, -h           Show this help message"
             echo ""
             echo "Environment Variables:"
@@ -72,6 +78,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
             echo "  --environment=ENV    Environment name (default: production)"
             echo "  --skip-validation    Skip environment validation"
+            echo "  --stop-after=PHASE   Stop after specific subphase: 2a|2b|2c|2d"
             echo "  --help, -h           Show this help message"
             echo ""
             exit 1
@@ -349,14 +356,38 @@ main() {
     _validate_phase2_prerequisites
     _migrate_bootstrap_state
 
+    if [[ "$STOP_AFTER" == "2a" ]]; then
+        log_success "✅ Stopped after Phase 2a as requested"
+        log_info "State migration completed. Credentials preserved in memory."
+        return 0
+    fi
+
     log_phase "🚀 Phase 2b: Infrastructure Workspace Setup"
     _setup_infrastructure_workspace
+
+    if [[ "$STOP_AFTER" == "2b" ]]; then
+        log_success "✅ Stopped after Phase 2b as requested"
+        log_info "Infrastructure workspace ready. Credentials preserved in memory."
+        return 0
+    fi
 
     log_phase "🚀 Phase 2c: Infrastructure Deployment"
     _deploy_infrastructure
 
+    if [[ "$STOP_AFTER" == "2c" ]]; then
+        log_success "✅ Stopped after Phase 2c as requested"
+        log_info "Infrastructure deployed. Credentials preserved in memory."
+        return 0
+    fi
+
     log_phase "🚀 Phase 2d: Validation & Cleanup"
     _validate_infrastructure_deployment
+
+    if [[ "$STOP_AFTER" == "2d" ]]; then
+        log_success "✅ Stopped after Phase 2d as requested"
+        log_info "Validation completed. Credentials preserved in memory."
+        return 0
+    fi
 
     _print_success_message
 }

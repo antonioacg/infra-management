@@ -12,6 +12,7 @@ NODE_COUNT=1
 RESOURCE_TIER="small"
 ENVIRONMENT="production"
 START_PHASE=0
+STOP_AFTER=""
 
 # Load import utility and logging library
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
@@ -36,6 +37,10 @@ while [[ $# -gt 0 ]]; do
             START_PHASE="${1#*=}"
             shift
             ;;
+        --stop-after=*)
+            STOP_AFTER="${1#*=}"
+            shift
+            ;;
         --help|-h)
             echo "Enterprise Platform Bootstrap - Main Orchestrator"
             echo "Single-command bootstrap that orchestrates all phases"
@@ -48,6 +53,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
             echo "  --environment=ENV    Environment: production|staging|development (default: production)"
             echo "  --start-phase=N      Start from specific phase (default: 0)"
+            echo "  --stop-after=PHASE   Stop after specific phase: 0|1|2|2a|2b|2c|2d"
             echo "  --help, -h           Show this help message"
             echo ""
             echo "Phases:"
@@ -78,6 +84,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
             echo "  --environment=ENV    Environment name (default: production)"
             echo "  --start-phase=N      Start from specific phase (default: 0)"
+            echo "  --stop-after=PHASE   Stop after specific phase: 0|1|2|2a|2b|2c|2d"
             echo "  --help, -h           Show this help message"
             echo ""
             exit 1
@@ -105,6 +112,10 @@ if [[ $START_PHASE -le 0 ]]; then
         main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"
     ); then
         log_success "Phase 0 completed"
+        if [[ "$STOP_AFTER" == "0" ]]; then
+            print_banner "✅ Stopped after Phase 0" "Tools validated" "Next: Run with --start-phase=1"
+            exit 0
+        fi
     else
         log_error "Phase 0 failed"
         exit 1
@@ -121,6 +132,10 @@ if [[ $START_PHASE -le 1 ]]; then
         main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-credentials
     ); then
         log_success "Phase 1 completed (credentials preserved for Phase 2)"
+        if [[ "$STOP_AFTER" == "1" ]]; then
+            print_banner "✅ Stopped after Phase 1" "Foundation ready" "Credentials preserved in memory. Next: Run with --start-phase=2"
+            exit 0
+        fi
     else
         log_error "Phase 1 failed"
         # Import credentials.sh to clear credentials on failure
@@ -135,15 +150,34 @@ fi
 # Phase 2: State migration + Infrastructure (uses preserved credentials)
 if [[ $START_PHASE -le 2 ]]; then
     log_phase "Phase 2: State migration + Infrastructure"
+
+    # Build Phase 2 arguments - pass --stop-after if it's a subphase
+    PHASE2_ARGS="--nodes=$NODE_COUNT --tier=$RESOURCE_TIER --environment=$ENVIRONMENT --skip-validation"
+    if [[ "$STOP_AFTER" =~ ^2[a-d]$ ]]; then
+        PHASE2_ARGS="$PHASE2_ARGS --stop-after=$STOP_AFTER"
+    fi
+
     if (
         smart_import "infra-management/scripts/bootstrap-phase2.sh"
-        main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --environment="$ENVIRONMENT" --skip-validation
+        main $PHASE2_ARGS
     ); then
         log_success "Phase 2 completed"
-        # Clean up credentials after successful Phase 2
-        smart_import "infra-management/scripts/lib/credentials.sh"
-        clear_bootstrap_credentials
-        log_info "🔒 Credentials cleared from memory after successful Phase 2"
+
+        # Only clean up credentials if we completed full Phase 2 (not a subphase stop)
+        if [[ -z "$STOP_AFTER" || "$STOP_AFTER" == "2" ]]; then
+            # Clean up credentials after successful Phase 2
+            smart_import "infra-management/scripts/lib/credentials.sh"
+            clear_bootstrap_credentials
+            log_info "🔒 Credentials cleared from memory after successful Phase 2"
+        else
+            # Subphase stop - preserve credentials
+            log_info "🔒 Credentials preserved in memory (stopped at $STOP_AFTER)"
+        fi
+
+        if [[ "$STOP_AFTER" =~ ^2[a-d]?$ ]]; then
+            print_banner "✅ Stopped after Phase $STOP_AFTER" "Partial Phase 2 complete" "Credentials preserved. Next steps documented above."
+            exit 0
+        fi
     else
         log_error "Phase 2 failed"
         # Clean up credentials on failure
