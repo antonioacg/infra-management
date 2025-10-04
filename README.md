@@ -11,17 +11,19 @@ Deploy enterprise-ready Kubernetes platform from any Linux machine:
 curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 ```
 
-**Current Status**: Phases 0-1 complete and secure. Phases 2-4 planned for full GitOps integration.
+**Current Status**: Phases 0-1 complete and secure. Phases 2-4 in development.
 
-## 5-Phase Bootstrap Process (0-4)
+## Bootstrap Phases
 
-1. ✅ **Phase 0**: Environment validation and tool installation
-2. ✅ **Phase 1**: k3s cluster + bootstrap storage (MinIO, PostgreSQL) with LOCAL state
-3. ⏳ **Phase 2**: State migration + Vault (OpenCryptoki auto-unseal) + External Secrets + Networking (REMOTE state)
-4. ⏳ **Phase 3**: Advanced Vault policies and security configuration
-5. ⏳ **Phase 4**: GitOps activation with Flux
+**See [BOOTSTRAP.md](BOOTSTRAP.md) for complete phase definitions and details.**
 
-**Enterprise Scaling**: `--nodes=1 --tier=small` to `--nodes=10 --tier=large` with same command
+- ✅ **Phase 0**: Environment & Tools
+- ✅ **Phase 1**: k3s + Bootstrap Storage (LOCAL state)
+- ⏳ **Phase 2**: Remote State + Vault Infrastructure
+- ⏳ **Phase 3**: Advanced Security
+- ⏳ **Phase 4**: GitOps Applications
+
+**Scaling**: `--nodes=1 --tier=small` → `--nodes=10 --tier=large`
 
 ## Architecture
 

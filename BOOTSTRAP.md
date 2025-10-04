@@ -1,331 +1,356 @@
-# 🚀 Single-Command Bootstrap
+# Bootstrap Documentation
 
 ## Overview
 
-Deploy a complete enterprise-grade Kubernetes platform with a single command from any Linux machine. This bootstrap script automatically handles tool installation, repository cloning, and the full 5-phase Terraform-first deployment.
+Single-command bootstrap for deploying an enterprise-grade Kubernetes platform with secure secret management and GitOps capabilities.
 
-## ⚡ Quick Start
-
-### One-Command Deployment
-
+**One Command:**
 ```bash
 curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 ```
 
-That's it! This single command will:
-1. ✅ **Phase 0**: Validate environment and install tools (kubectl, terraform, helm, flux)
-2. ✅ **Phase 1**: Deploy k3s cluster + bootstrap storage (MinIO, PostgreSQL) with LOCAL state
-3. ⏳ **Phase 2**: Deploy Vault + External Secrets + Ingress with REMOTE state migration (planned)
-4. ⏳ **Phase 3**: Vault initialization, unsealing, and security policies (planned)
-5. ⏳ **Phase 4**: GitOps activation with Flux (planned)
+**Current Status:** Phases 0-1 complete and validated. Phases 2-4 in development.
 
-## 🎯 Enterprise Scaling
+---
 
-### Single Node Deployment (Default)
+## 📋 Bootstrap Phases (Canonical Definitions)
+
+### Phase 0: Environment & Tools
+
+**Purpose:** Validate system requirements and install necessary tools without touching the cluster.
+
+**What It Does:**
+- System architecture detection (x86_64/ARM64, Linux/macOS)
+- Tool installation: kubectl, terraform, helm, flux
+- Environment validation (sudo access, network connectivity)
+- GitHub token validation
+
+**State Management:** No Terraform state (no infrastructure deployed).
+
+**Success Criteria:**
+- All required tools installed and accessible
+- System meets minimum requirements
+- GitHub token has correct scopes
+
+---
+
+### Phase 1: k3s + Bootstrap Storage
+
+**Purpose:** Deploy foundation infrastructure with local state for bootstrapping.
+
+**What It Does:**
+- k3s cluster deployment with tier-based resource allocation
+- MinIO S3-compatible storage (for future Terraform remote state)
+- PostgreSQL database (for future state locking)
+- Bootstrap namespace creation
+
+**State Management:**
+- LOCAL Terraform state in temporary directory (`/tmp/phase1-terraform-$$`)
+- State preserved for migration in Phase 2
+
+**Key Design Decisions:**
+- Local state allows bootstrap without dependencies
+- Temporary directory isolates bootstrap state
+- Credentials generated in-memory only (no files)
+- Tier-based scaling (small/medium/large) for enterprise readiness
+
+**Success Criteria:**
+- k3s cluster running and accessible via kubectl
+- MinIO and PostgreSQL pods running in bootstrap namespace
+- Credentials generated and preserved in memory for Phase 2
+
+---
+
+### Phase 2: Remote State + Vault Infrastructure
+
+**Purpose:** Migrate to remote state and deploy core infrastructure services.
+
+**What It Does:**
+- Migrate Phase 1 state from LOCAL to REMOTE (MinIO S3 backend)
+- Configure PostgreSQL state locking
+- Deploy Vault with OpenCryptoki auto-unseal
+- Deploy External Secrets Operator with ClusterSecretStore configuration
+
+**State Management:**
+- Phase 1 state migrated to remote MinIO backend
+- All new infrastructure uses REMOTE state in `infra/environments/production/`
+- PostgreSQL provides state locking for concurrent operation safety
+
+**Key Design Decisions:**
+- OpenCryptoki provides enterprise-grade auto-unseal without cloud dependencies
+- External Secrets enables GitOps secret management
+- No ingress/networking (deferred to Phase 4)
+- kubectl port-forward used for bootstrap access
+
+**Success Criteria:**
+- Phase 1 state successfully migrated to MinIO
+- Vault pods running and auto-unsealed
+- External Secrets Operator connecting to Vault
+- ClusterSecretStore authentication successful
+- State locking prevents concurrent operations
+
+---
+
+### Phase 3: Advanced Security (Planned)
+
+**Purpose:** Configure advanced Vault features and security policies.
+
+**What It Does:**
+- Advanced Vault authentication backends (Kubernetes, AppRole, etc.)
+- Vault policy configuration for least-privilege access
+- Certificate management setup
+- Security hardening and compliance configuration
+
+**State Management:** REMOTE state in `infra/environments/production/`
+
+**Success Criteria:**
+- Vault policies configured for application access
+- Authentication backends operational
+- Certificate management ready for TLS
+
+---
+
+### Phase 4: GitOps Applications (Planned)
+
+**Purpose:** Enable GitOps-based application deployment.
+
+**What It Does:**
+- Flux GitOps controller deployment
+- Networking/Ingress deployment (Nginx Ingress Controller)
+- GitOps repository sync configuration
+- Application deployment automation
+
+**State Management:** REMOTE state in `infra/environments/production/`
+
+**Key Design Decisions:**
+- Networking deferred to Phase 4 (not needed for bootstrap)
+- GitOps uses External Secrets for credential management
+- Applications deployed via Flux reconciliation
+
+**Success Criteria:**
+- Flux syncing from git repositories
+- Ingress controller ready for external traffic
+- Applications deployable via GitOps manifests
+
+---
+
+## 🎯 Usage
+
+### Full Bootstrap (All Phases)
+
 ```bash
+# Single node, small resources (default)
 curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
-```
 
-### Multi-Node Production Deployment
-```bash
+# Multi-node HA, medium resources
 curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=3 --tier=medium
-```
 
-### Enterprise Scale Deployment
-```bash
+# Enterprise scale, large resources
 curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=10 --tier=large
 ```
 
-## 🧪 Individual Phase Testing
+### Individual Phase Testing
 
-For development and troubleshooting, each phase can be tested independently:
-
-### **Phase 0: Environment + Tools**
+**Phase 0:**
 ```bash
-# Standalone testing (full validation)
 curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase0.sh | GITHUB_TOKEN="test" bash -s -- --nodes=1 --tier=small
-
-# Called from main bootstrap (skip redundant validation)
-./scripts/bootstrap-phase0.sh --nodes=1 --tier=small --skip-validation
 ```
 
-### **Phase 1: k3s + Bootstrap Storage**
+**Phase 1:** (requires Phase 0 completion)
 ```bash
-# Standalone testing (includes environment validation)
 curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN="test" bash -s -- --nodes=1 --tier=small
-
-# Called from main bootstrap (skip Phase 0 validation)
-./scripts/bootstrap-phase1.sh --nodes=1 --tier=small --skip-validation
 ```
 
-### **Phase 2: Vault + Infrastructure**
+**Phase 2:** (requires Phase 1 completion)
 ```bash
-# Requires Phase 1 foundation (k3s + storage)
-./scripts/bootstrap-phase2.sh --nodes=1 --tier=small --skip-validation
+./scripts/bootstrap-phase2.sh --nodes=1 --tier=small --environment=production
 ```
 
-### **Phase 3: GitOps Activation**
+### Start from Specific Phase
+
 ```bash
-# Requires Phase 2 infrastructure (Vault + External Secrets)
-./scripts/bootstrap-phase3.sh --nodes=1 --tier=small --skip-validation
+# Skip Phase 0 (tools already installed)
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small --start-phase=1
+
+# Skip Phase 0-1 (foundation already deployed)
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small --start-phase=2
 ```
+
+---
 
 ## 📋 Prerequisites
 
 ### System Requirements
-- **OS**: Linux (Ubuntu, Debian, CentOS, Fedora, Arch)
-- **Architecture**: x86_64 or ARM64
-- **Memory**: 4GB+ RAM recommended
-- **Storage**: 20GB+ available disk space
-- **Network**: Internet connectivity for package downloads
+- **OS:** Linux (Ubuntu, Debian, CentOS, Fedora, Arch)
+- **Architecture:** x86_64 or ARM64
+- **Memory:** 4GB+ RAM recommended
+- **Storage:** 20GB+ available disk space
+- **Network:** Internet connectivity required
 
 ### Required Access
-- **GitHub Token**: Personal access token with `repo` and `workflow` scopes
-- **sudo Access**: For tool installation and k3s setup
-- **Port Access**: Ports 80, 443, 8200, 9000 available
+- **GitHub Token:** Personal access token with `repo` and `workflow` scopes
+  - Get token at: https://github.com/settings/tokens
+- **sudo Access:** Required for tool installation and k3s setup
 
-### GitHub Token Setup
-1. Go to https://github.com/settings/tokens
-2. Create a new token with these scopes:
-   - `repo` - Full repository access
-   - `workflow` - Workflow access
-3. Copy the token (starts with `ghp_`)
+---
 
-## 🔧 Advanced Usage
+## 🏗️ Architecture Overview
 
-### Manual Download and Execution
-```bash
-# Download the script
-curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh -o bootstrap.sh
-chmod +x bootstrap.sh
+### Repository Structure
 
-# Execute with custom environment
-GITHUB_TOKEN="ghp_xxx" ./bootstrap.sh --nodes=1 --tier=small
-```
+**Three-Repository Architecture:**
+- **infra-management/** - Bootstrap orchestration (this repository)
+- **infra/** - Terraform infrastructure modules and environments
+- **deployments/** - GitOps manifests and Flux configuration
 
-### Custom Workspace Directory
-```bash
-# Temporary workspace: /tmp/phase1-terraform-$$ (auto-created)
-# To use custom location, modify WORK_DIR in script
-```
+### State Management Strategy
 
-### Environment Variables
-```bash
-export GITHUB_TOKEN="ghp_xxx"                    # Required: GitHub access token
-export WORKSPACE_ROOT="$HOME/custom-workspace"   # Optional: Custom workspace
-export TERRAFORM_VERSION="1.6.6"                # Optional: Specific Terraform version
-export VAULT_VERSION="1.15.2"                   # Optional: Specific Vault CLI version
-```
+**Phase 1 (Bootstrap Foundation):**
+- Location: `/tmp/phase1-terraform-$$` (temporary)
+- Backend: LOCAL filesystem
+- Purpose: Foundation only (k3s, MinIO, PostgreSQL)
 
-## 🏗️ What Gets Deployed
+**Phase 2+ (Infrastructure & Applications):**
+- Location: `infra/environments/production/`
+- Backend: REMOTE (MinIO S3 + PostgreSQL locking)
+- Purpose: All infrastructure and application state
 
-### Infrastructure Layer (Terraform-Managed)
-```
-k3s Cluster
-├── bootstrap namespace
-│   ├── MinIO (S3-compatible state backend)
-│   └── PostgreSQL (state locking)
-├── vault namespace
-│   └── Vault (centralized secret management)
-└── external-secrets-system
-    └── External Secrets Operator
-```
+**Key Principle:** Clear separation between bootstrap foundation and infrastructure services.
 
-### Application Layer (GitOps-Managed)
-```
-Platform Services
-├── flux-system namespace
-│   └── Flux GitOps controllers
-└── ingress-nginx namespace
-    └── Nginx Ingress Controller
-```
+### Scaling Strategy
 
-### Complete Architecture
-- **Remote State**: S3-compatible MinIO backend
-- **Secret Management**: HashiCorp Vault with auto-initialization
-- **GitOps**: Flux CD for application deployment
-- **Networking**: Nginx Ingress Controller
-- **Scaling**: Resource-based scaling (1 node → enterprise)
+**Resource Tiers:**
+- **small:** 10Gi MinIO, 8Gi PostgreSQL
+- **medium:** HA, 50Gi MinIO, 20Gi PostgreSQL
+- **large:** Enterprise scale, 100Gi+ MinIO, 50Gi+ PostgreSQL
+
+**Node Scaling:**
+- `--nodes=1` - Single node deployment
+- `--nodes=3` - HA deployment with quorum
+- `--nodes=10+` - Enterprise scale
+
+---
+
+## 🔐 Security Model
+
+### Credential Management
+
+**Phase 1:**
+- All credentials generated in-memory using OpenSSL
+- No credential files created on disk
+- Credentials preserved in memory for Phase 2 (from Phase 1)
+
+**Phase 2:**
+- Phase 1 credentials used for state migration
+- Vault HSM PIN generated for OpenCryptoki
+- All credentials cleared from memory after successful deployment
+
+**Phase 3+:**
+- All secrets managed via Vault
+- External Secrets syncs secrets to Kubernetes
+- GitOps applications access secrets via External Secrets
+
+### Zero-Secrets Architecture
+
+- **Git Repositories:** No secrets ever committed
+- **Environment Variables:** Used only during bootstrap, then cleared
+- **Secret Management:** Vault + External Secrets for all ongoing operations
+
+---
 
 ## 🔍 Verification
 
-### Check Deployment Status
+### Phase 1 Verification
 ```bash
-# Overall cluster health
-kubectl get pods -A
-
-# Specific services
-kubectl get pods -n vault
-kubectl get pods -n external-secrets-system
-kubectl get pods -n flux-system
-kubectl get pods -n ingress-nginx
-
-# GitOps status
-flux get sources git
-flux get kustomizations
+kubectl get nodes
+kubectl get pods -n bootstrap
+kubectl get pvc -n bootstrap
 ```
 
-### Access Services
+### Phase 2 Verification (when available)
 ```bash
-# Vault UI
+# Vault status
+kubectl get pods -n vault
 kubectl port-forward -n vault svc/vault 8200:8200
-# Access: http://localhost:8200
+curl http://localhost:8200/v1/sys/health
 
+# External Secrets
+kubectl get clustersecretstore vault-backend
+kubectl get externalsecrets -A
+```
+
+### State Backend Access (Phase 2+)
+```bash
 # MinIO console
 kubectl port-forward -n bootstrap svc/bootstrap-minio 9001:9001
 # Access: http://localhost:9001
 ```
 
+---
+
 ## 🐛 Troubleshooting
 
-### Common Issues
+### General Approach
+1. Check logs with increased verbosity: `LOG_LEVEL=DEBUG` or `LOG_LEVEL=TRACE`
+2. Verify prerequisites are met for the phase
+3. Check component-specific logs: `kubectl logs -n <namespace> <pod>`
 
-#### Tool Installation Fails
+### Phase 1 Issues
+
+**k3s installation fails:**
+- Check system requirements (architecture, OS, resources)
+- Verify sudo access
+- Review k3s logs: `journalctl -u k3s`
+
+**Terraform deployment fails:**
+- Verify credentials are generated (check script output)
+- Check pod status: `kubectl get pods -n bootstrap`
+- Review Terraform logs in temporary directory
+
+### Phase 2 Issues (when available)
+
+**State migration fails:**
+- Verify MinIO accessibility: `kubectl port-forward -n bootstrap svc/bootstrap-minio 9000:9000`
+- Check Phase 1 temp directory still exists with terraform.tfstate
+- Validate credentials are preserved from Phase 1
+
+**Vault unsealing fails:**
+- Check OpenCryptoki daemon logs
+- Verify HSM PIN configuration
+- Review Vault pod logs for initialization errors
+
+### Recovery Procedures
+
+**Full cleanup and restart:**
 ```bash
-# Check package manager
-sudo apt-get update  # Ubuntu/Debian
-sudo yum update       # CentOS/RHEL
-sudo dnf update       # Fedora
+# Clean up previous deployment
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force
 
-# Manual tool installation
-sudo ./scripts/install-tools.sh
+# Run complete bootstrap (Phase 0 + Phase 1)
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 ```
 
-#### GitHub Authentication Fails
+**Development iteration (faster cycle):**
 ```bash
-# Verify token has correct scopes
-curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
+# Clean up k3s cluster only, preserve tools
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force --skip-phase0
 
-# Test repository access
-git clone https://github.com/${GITHUB_ORG:-antonioacg}/infra-management.git
+# Run Phase 0 + Phase 1 (always run both)
+curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 ```
 
-#### k3s Installation Issues
-```bash
-# Check system requirements
-systemctl status k3s
-journalctl -u k3s
-
-# Manual k3s restart
-sudo systemctl restart k3s
-```
-
-### Error Recovery
-
-#### Workspace Preserved for Debugging
-If bootstrap fails, the temporary workspace is preserved for debugging:
-```bash
-# Find workspace (process ID in directory name)
-ls -la /tmp/phase1-terraform-*
-
-# Inspect terraform state and logs
-cd /tmp/phase1-terraform-*/
-terraform show
-ls -la *.log
-
-# Manual retry (if needed)
-terraform apply
-
-# Clean retry (start over)
-rm -rf /tmp/phase1-terraform-*
-# Run bootstrap command again
-```
-
-#### Rollback Procedures
-```bash
-# Remove k3s completely
-sudo k3s-uninstall.sh
-
-# Clean up tools (if needed)
-sudo rm -f /usr/local/bin/{kubectl,terraform,helm,flux}
-
-# Start fresh (no workspace cleanup needed - temporary directories auto-cleaned)
-```
-
-## 🎯 Next Steps After Bootstrap
-
-### Deploy Applications
-```bash
-# Example: Deploy a test application
-kubectl create deployment nginx --image=nginx
-kubectl expose deployment nginx --port=80 --type=ClusterIP
-```
-
-### Configure Ingress
-```bash
-# Create ingress for your applications
-# Nginx Ingress Controller is ready for traffic
-```
-
-### Manage Secrets
-```bash
-# Access Vault for secret management
-kubectl port-forward -n vault svc/vault 8200:8200
-# Initialize Vault and create secrets
-```
-
-### Scale Infrastructure
-```bash
-# Add more nodes (enterprise scaling)
-# Update terraform.tfvars and run terraform apply
-```
-
-## 📚 Architecture Documentation
-
-For complete architectural details, see:
-- `ENTERPRISE_PLATFORM_ARCHITECTURE.md` - Design principles and patterns
-- `ENTERPRISE_PLATFORM_STATUS.md` - Current implementation status
-- `CLAUDE.md` - Operational procedures and troubleshooting
-
-## 🔐 Security Notes
-
-### Credential Management
-- ✅ All secrets generated automatically and stored in Vault
-- ✅ No hardcoded credentials in Git repositories
-- ✅ GitHub token only used for repository access
-- ✅ MinIO credentials auto-generated and secure
-
-### Network Security
-- ✅ Cluster-internal communication encrypted
-- ✅ External access via Nginx Ingress only
-- ✅ Vault backend isolated from application storage
-- ✅ Network policies enabled for Flux
-
-### Production Hardening
-For production deployments, consider:
-- SSL/TLS certificates (cert-manager)
-- Network policies for all applications
-- Pod security standards
-- Regular backup procedures
-- Monitoring and alerting
-
-## 🎉 Success Indicators
-
-When bootstrap completes successfully, you should see:
-- ✅ All pods running in all namespaces
-- ✅ Vault accessible and initialized
-- ✅ Flux syncing from Git repositories
-- ✅ Nginx Ingress Controller accepting traffic
-- ✅ External Secrets syncing from Vault
-
-**You now have a complete, enterprise-grade Kubernetes platform!**
-
-## 🔧 Troubleshooting
-
-If you encounter issues during bootstrap:
-
-1. **Check the logs** - All scripts provide detailed logging with `LOG_LEVEL=DEBUG` (or `LOG_LEVEL=TRACE` for maximum detail)
-2. **Clean and retry** - Use the cleanup script and try again
-   - ⚠️ **Note**: Cleanup removes k3s cluster and all installed tools - you'll need to run Phase 0 again
-3. **Validate environment** - Ensure all prerequisites are met
-
-> **For detailed troubleshooting procedures, operational commands, and debugging guides, see the internal operational documentation.**
+**Important Notes:**
+- Always run cleanup before testing/retrying
+- Phase 0 must run before Phase 1 (dependency validation)
+- Use `bootstrap.sh` for Phase 0-1, then continue with Phase 2+ (credentials in memory)
 
 ---
 
-## Enterprise Vision Achieved
+## 📚 Additional Documentation
 
-This single-command bootstrap transforms our enterprise readiness from **4.5/10** to **8.5/10** by eliminating the biggest adoption barrier: complex manual deployment procedures.
+**Implementation Details:**
+- Phase 2 implementation plan: `bootstrap-phase2-plan.md`
+- Operational procedures: `CLAUDE.md` (workspace-specific)
 
-**Vision**: `curl ... | bash` → **Complete Enterprise Platform**
-**Reality**: ✅ **Delivered**
+**Architecture:**
+- Enterprise platform architecture: `ENTERPRISE_PLATFORM_ARCHITECTURE.md` (if exists)
