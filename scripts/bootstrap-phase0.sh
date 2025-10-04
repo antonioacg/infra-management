@@ -101,7 +101,8 @@ _validate_environment() {
 }
 
 
-install_tools() {
+# PRIVATE: Install required tools
+_install_tools() {
     log_info "[Phase 0b] Installing required tools remotely..."
 
     # Import tool installation script using smart_import (preserves logging context)
@@ -119,7 +120,8 @@ install_tools() {
     fi
 }
 
-verify_prerequisites() {
+# PRIVATE: Verify all prerequisites are met
+_verify_prerequisites() {
     log_info "[Phase 0b] Verifying all prerequisites..."
 
     # Use shared verification from install-tools.sh (already imported)
@@ -181,7 +183,8 @@ _get_current_phase() {
     fi
 }
 
-print_success_message() {
+# PRIVATE: Print success message with next steps
+_print_success_message() {
     log_info ""
     log_success "[Phase 0] 🎉 PHASE 0 TESTING COMPLETE!"
     log_info ""
@@ -217,18 +220,19 @@ main() {
     detect_system_architecture
 
     log_phase "🚀 Phase 0b: Tool Installation"
-    install_tools
-    verify_prerequisites
+    _install_tools
+    _verify_prerequisites
 
     log_phase "🚀 Phase 0c: Configuration"
     _configure_environment
 
     log_phase "🚀 Phase 0: Complete!"
-    print_success_message
+    _print_success_message
 }
 
 # Only run main when executed directly (not sourced via smart_import)
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# Handles: direct execution, curl piping, but NOT sourcing via smart_import
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
     _parse_parameters "$@"
     main "$@"
 fi

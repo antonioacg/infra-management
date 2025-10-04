@@ -19,59 +19,61 @@ smart_import "infra-management/scripts/lib/system.sh"
 smart_import "infra-management/scripts/lib/network.sh"
 smart_import "infra-management/scripts/lib/credentials.sh"
 
-# Parse parameters
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --nodes=*)
-            NODE_COUNT="${1#*=}"
-            shift
-            ;;
-        --tier=*)
-            RESOURCE_TIER="${1#*=}"
-            shift
-            ;;
-        --skip-validation)
-            SKIP_VALIDATION=true
-            shift
-            ;;
-        --preserve-credentials)
-            PRESERVE_CREDENTIALS=true
-            shift
-            ;;
-        --help|-h)
-            echo "Enterprise Platform Bootstrap - Phase 1"
-            echo "k3s cluster + Bootstrap Storage (LOCAL state)"
-            echo ""
-            echo "Usage:"
-            echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s -- [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --nodes=N                Number of nodes (default: 1)"
-            echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
-            echo "  --skip-validation        Skip environment validation (when called from main bootstrap)"
-            echo "  --preserve-credentials   Preserve credentials for orchestrated execution"
-            echo "  --help, -h               Show this help message"
-            echo ""
-            echo "Environment Variables:"
-            echo "  GITHUB_TOKEN        GitHub token (use \"test\" for Phase 1 testing)"
-            echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
-            echo ""
-            exit 0
-            ;;
-        *)
-            echo "Error: Unknown parameter: $1"
-            echo ""
-            echo "Usage: $0 [OPTIONS]"
-            echo "  --nodes=N                Number of nodes (default: 1)"
-            echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
-            echo "  --skip-validation        Skip environment validation"
-            echo "  --preserve-credentials   Preserve credentials for orchestration"
-            echo "  --help, -h               Show this help message"
-            echo ""
-            exit 1
-            ;;
-    esac
-done
+# PRIVATE: Parse command-line parameters
+_parse_parameters() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --nodes=*)
+                NODE_COUNT="${1#*=}"
+                shift
+                ;;
+            --tier=*)
+                RESOURCE_TIER="${1#*=}"
+                shift
+                ;;
+            --skip-validation)
+                SKIP_VALIDATION=true
+                shift
+                ;;
+            --preserve-credentials)
+                PRESERVE_CREDENTIALS=true
+                shift
+                ;;
+            --help|-h)
+                echo "Enterprise Platform Bootstrap - Phase 1"
+                echo "k3s cluster + Bootstrap Storage (LOCAL state)"
+                echo ""
+                echo "Usage:"
+                echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase1.sh | GITHUB_TOKEN=\"test\" bash -s -- [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --nodes=N                Number of nodes (default: 1)"
+                echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
+                echo "  --skip-validation        Skip environment validation (when called from main bootstrap)"
+                echo "  --preserve-credentials   Preserve credentials for orchestrated execution"
+                echo "  --help, -h               Show this help message"
+                echo ""
+                echo "Environment Variables:"
+                echo "  GITHUB_TOKEN        GitHub token (use \"test\" for Phase 1 testing)"
+                echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
+                echo ""
+                exit 0
+                ;;
+            *)
+                echo "Error: Unknown parameter: $1"
+                echo ""
+                echo "Usage: $0 [OPTIONS]"
+                echo "  --nodes=N                Number of nodes (default: 1)"
+                echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
+                echo "  --skip-validation        Skip environment validation"
+                echo "  --preserve-credentials   Preserve credentials for orchestration"
+                echo "  --help, -h               Show this help message"
+                echo ""
+                exit 1
+                ;;
+        esac
+    done
+}
 
 # Bootstrap directory for local vs remote usage
 if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
@@ -714,5 +716,9 @@ main() {
     fi
 }
 
-# Execute main function with all arguments
-main "$@"
+# Only run main when executed directly (not sourced via smart_import)
+# Handles: direct execution, curl piping, but NOT sourcing via smart_import
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
+    _parse_parameters "$@"
+    main "$@"
+fi

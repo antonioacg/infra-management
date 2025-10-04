@@ -403,8 +403,9 @@ _validate_tools() {
     echo ""
 }
 
-# Run main function if script is executed directly
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+# Run main function if script is executed directly (not sourced via smart_import)
+# Handles: direct execution, curl piping, but NOT sourcing via smart_import
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in

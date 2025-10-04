@@ -16,6 +16,14 @@
 # Debug imports:
 #   DEBUG_IMPORTS=true ./your-script.sh
 #   # Will show import resolution details
+#
+# IMPORTANT: Scripts sourced via smart_import must check execution context:
+#   # At end of sourced script:
+#   if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
+#       # Only run main when executed directly or via curl piping (not sourced)
+#       _parse_parameters "$@"
+#       main "$@"
+#   fi
 
 # Configuration
 GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
