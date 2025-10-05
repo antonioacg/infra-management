@@ -17,6 +17,35 @@ STOP_AFTER=""
 # Load import utility and logging library
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
+smart_import "infra-management/scripts/lib/system.sh"
+
+# Shared bootstrap temporary directory (used by all phases)
+BOOTSTRAP_TEMP_DIR="/tmp/bootstrap-state"
+export BOOTSTRAP_TEMP_DIR
+
+# PRIVATE: Cleanup function
+_cleanup() {
+    local exit_code=$?
+
+    log_info "🧹 [Bootstrap] Cleaning up resources..."
+
+    # Clean credentials from memory
+    clear_bootstrap_credentials 2>/dev/null || true
+
+    # Clean shared temp directory
+    rm -rf "$BOOTSTRAP_TEMP_DIR" 2>/dev/null || true
+
+    # Show appropriate message based on exit code
+    if [[ $exit_code -eq 130 ]]; then
+        log_warning "[Bootstrap] ⚠️  Script interrupted by user"
+    elif [[ $exit_code -ne 0 ]]; then
+        log_error "[Bootstrap] ❌ Bootstrap failed with exit code $exit_code"
+        log_info "[Bootstrap] 🔍 Check logs above for specific error details"
+    fi
+}
+
+# Stack cleanup trap (will run after all phase cleanups)
+stack_trap "_cleanup" EXIT
 
 # Parse parameters
 while [[ $# -gt 0 ]]; do
@@ -128,15 +157,15 @@ else
     log_info "Skipping Phase 0 (starting from Phase $START_PHASE)"
 fi
 
-# Phase 1: k3s + Bootstrap Storage (preserve state for Phase 2)
+# Phase 1: k3s + Bootstrap Storage (LOCAL state) (preserve state for Phase 2)
 if [[ $START_PHASE -le 1 ]]; then
-    log_phase "Phase 1: k3s + Bootstrap Storage"
+    log_phase "Phase 1: k3s + Bootstrap Storage (LOCAL state)"
 
     # Import and call phase script
     smart_import "infra-management/scripts/bootstrap-phase1.sh"
 
-    # Run Phase 1 without subshell to preserve credentials and state
-    if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-state; then
+    # Run Phase 1 without subshell to preserve credentials
+    if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 1 completed (credentials preserved for Phase 2)"
         # Unset main to avoid collision with next phase
         unset -f main

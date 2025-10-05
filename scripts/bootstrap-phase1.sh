@@ -11,8 +11,6 @@ GIT_REF="${GIT_REF:-main}"
 NODE_COUNT=1
 RESOURCE_TIER="small"
 SKIP_VALIDATION=false
-PRESERVE_STATE=false
-PHASE1_PRESERVED_DIR="/tmp/phase1-preserved-state"
 
 # Load import utility and logging library (bash 3.2+ compatible)
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
@@ -37,10 +35,6 @@ _parse_parameters() {
                 SKIP_VALIDATION=true
                 shift
                 ;;
-            --preserve-state)
-                PRESERVE_STATE=true
-                shift
-                ;;
             --help|-h)
                 echo "Enterprise Platform Bootstrap - Phase 1"
                 echo "k3s cluster + Bootstrap Storage (LOCAL state)"
@@ -52,7 +46,6 @@ _parse_parameters() {
                 echo "  --nodes=N                Number of nodes (default: 1)"
                 echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
                 echo "  --skip-validation        Skip environment validation (when called from main bootstrap)"
-                echo "  --preserve-state         Preserve state and credentials for Phase 2"
                 echo "  --help, -h               Show this help message"
                 echo ""
                 echo "Environment Variables:"
@@ -68,7 +61,6 @@ _parse_parameters() {
                 echo "  --nodes=N                Number of nodes (default: 1)"
                 echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
                 echo "  --skip-validation        Skip environment validation"
-                echo "  --preserve-state         Preserve state and credentials for Phase 2"
                 echo "  --help, -h               Show this help message"
                 echo ""
                 exit 1
@@ -83,10 +75,46 @@ if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     BOOTSTRAP_STATE_DIR="$(dirname "$SCRIPT_DIR")/bootstrap-state"
 else
-    # Remote usage: create temp directory for terraform init -from-module
-    BOOTSTRAP_STATE_DIR="/tmp/phase1-terraform-$$"
+    # Remote usage: use shared bootstrap temp directory
+    BOOTSTRAP_STATE_DIR="${BOOTSTRAP_TEMP_DIR:-/tmp/bootstrap-state}"
     mkdir -p "$BOOTSTRAP_STATE_DIR"
 fi
+
+# PRIVATE: Cleanup function for Phase 1
+_cleanup() {
+    local exit_code=$?
+
+    log_info "🧹 [Phase 1] Cleaning up resources..."
+
+    # No phase-specific cleanup needed for Phase 1
+    # (k3s stays running for Phase 2+)
+
+    # Clear credentials (in orchestrated mode, bootstrap.sh also does this, which is fine)
+    clear_bootstrap_credentials 2>/dev/null || true
+
+    # Clean shared temp directory (idempotent)
+    rm -rf /tmp/bootstrap-state 2>/dev/null || true
+
+    # Show appropriate message based on exit code
+    if [[ $exit_code -eq 130 ]]; then
+        log_warning "[Phase 1] ⚠️  Script interrupted by user"
+    elif [[ $exit_code -ne 0 ]]; then
+        log_error "[Phase 1] ❌ Bootstrap foundation failed with exit code $exit_code"
+        log_info ""
+        log_info "🔍 Debugging information:"
+        log_info "  • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
+        log_info "  • Architecture: ${DETECTED_OS:-unknown}/${DETECTED_ARCH:-unknown}"
+        log_info "  • Working directory: $(pwd)"
+        log_info ""
+        log_info "🔧 Recovery options:"
+        log_info "  1. Check k3s status: sudo systemctl status k3s"
+        log_info "  2. Check pods: kubectl get pods -A"
+        log_info "  3. Check logs: kubectl logs -n bootstrap -l app=minio"
+        log_info "  4. Retry Phase 1: curl ... (run this script again)"
+        log_info "  5. Full cleanup: sudo k3s-uninstall.sh && rm -rf /tmp/bootstrap-state"
+        log_info ""
+    fi
+}
 
 # PRIVATE: Validate environment prerequisites for Phase 1
 _validate_environment() {
@@ -596,52 +624,6 @@ _verify_bootstrap_foundation() {
     log_info "[Phase 1c]   • Local State: terraform.tfstate in $(pwd)"
 }
 
-# PRIVATE: Cleanup resources and provide helpful error information
-_cleanup_on_error() {
-    local exit_code=$?
-    local line_number=$1
-
-    # Clear credentials from memory on error (security critical)
-    log_info "[Phase 1] Clearing credentials from memory (error cleanup)..."
-    clear_bootstrap_credentials
-
-    # Clean up temporary directory in remote mode
-    if [[ "${USE_LOCAL_IMPORTS:-false}" != "true" && -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
-        log_info "[Phase 1] Cleaning up temporary directory: $BOOTSTRAP_STATE_DIR"
-        rm -rf "$BOOTSTRAP_STATE_DIR"
-    fi
-
-    if [[ $exit_code -ne 0 ]]; then
-        log_info ""
-        log_error "[Phase 1] ❌ Bootstrap foundation failed at line $line_number with exit code $exit_code"
-        log_info ""
-        log_info "🔍 Debugging information:"
-        log_info "  • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
-        log_info "  • Architecture: ${DETECTED_OS:-unknown}/${DETECTED_ARCH:-unknown}"
-        log_info "  • Failed phase: $(get_current_phase)"
-        log_info "  • Working directory: $(pwd)"
-        log_info ""
-        log_info "🔧 Recovery options:"
-        log_info "  1. Check k3s status: sudo systemctl status k3s"
-        log_info "  2. Check pods: kubectl get pods -A"
-        log_info "  3. Check logs: kubectl logs -n bootstrap -l app.kubernetes.io/name=minio"
-        log_info "  4. Retry Phase 1: curl ... (run this script again)"
-        log_info "  5. Full cleanup: sudo k3s-uninstall.sh && rm -rf terraform.tfstate*"
-        log_info ""
-        exit $exit_code
-    fi
-}
-
-# PRIVATE: Get current bootstrap phase for error reporting
-_get_current_phase() {
-    if ! command -v k3s >/dev/null 2>&1; then
-        echo "Phase 1b: k3s Installation"
-    elif ! kubectl get namespace bootstrap >/dev/null 2>&1; then
-        echo "Phase 1c: Storage Deployment"
-    else
-        echo "Phase 1: Verification"
-    fi
-}
 
 # PRIVATE: Print final success message with next steps
 _print_success_message() {
@@ -677,12 +659,12 @@ main() {
         _parse_parameters "$@"
     fi
 
-    # Set up comprehensive error handling
-    trap '_cleanup_on_error $LINENO' ERR
-    trap 'log_warning "[Phase 1] Script interrupted by user"; exit 130' INT TERM
+    # Stack cleanup trap (runs after all other phases in orchestrated mode)
+    # Handles both success and failure (including user interrupts)
+    stack_trap "_cleanup" EXIT
 
     print_banner "🏗️  Enterprise Platform Phase 1" \
-                 "📦 k3s + Bootstrap Storage (LOCAL state)" \
+                 "📦 k3s + Bootstrap Storage" \
                  "🎯 Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
 
     log_phase "🚀 Phase 1a: Environment Validation"
@@ -703,45 +685,11 @@ main() {
 
     log_phase "🚀 Phase 1: Complete!"
 
-    # Conditional credential cleanup
-    if [[ "$PRESERVE_STATE" == "true" ]]; then
-        log_info "[Phase 1] 🔒 Preserving credentials for orchestrated execution"
-        log_info "[Phase 1] ⚠️  Credentials will be cleared by orchestrator after Phase 2"
-        log_info "[Phase 1] ℹ️  This is only safe when called from bootstrap.sh orchestrator"
-    else
-        # Standalone execution - clear credentials for security
-        log_info "[Phase 1] 🔒 Clearing credentials from memory (standalone execution)..."
-        clear_bootstrap_credentials
-    fi
-
     _print_success_message
 
-    # Preserve state for Phase 2 or clean up
-    if [[ "$PRESERVE_STATE" == "true" && "${USE_LOCAL_IMPORTS:-false}" != "true" ]]; then
-        # Preserve state and config for Phase 2
-        log_info "[Phase 1] 📂 Preserving state for Phase 2: $PHASE1_PRESERVED_DIR"
-
-        # Remove existing preserved directory if it exists (idempotent)
-        rm -rf "$PHASE1_PRESERVED_DIR"
-        mkdir -p "$PHASE1_PRESERVED_DIR"
-
-        # Copy only what Phase 2 needs
-        cp "$BOOTSTRAP_STATE_DIR/terraform.tfstate" "$PHASE1_PRESERVED_DIR/"
-        cp "$BOOTSTRAP_STATE_DIR/backend-remote.hcl" "$PHASE1_PRESERVED_DIR/"
-
-        log_success "[Phase 1] ✅ State preserved for Phase 2"
-        log_info "[Phase 1]   • terraform.tfstate → $PHASE1_PRESERVED_DIR/"
-        log_info "[Phase 1]   • backend-remote.hcl → $PHASE1_PRESERVED_DIR/"
-
-        # Clean up original temp directory
-        if [[ -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
-            rm -rf "$BOOTSTRAP_STATE_DIR"
-        fi
-    elif [[ "${USE_LOCAL_IMPORTS:-false}" != "true" && -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
-        # Standalone execution - clean up temp directory
-        log_info "[Phase 1] Cleaning up temporary directory: $BOOTSTRAP_STATE_DIR"
-        rm -rf "$BOOTSTRAP_STATE_DIR"
-    fi
+    # Note: Cleanup handled by EXIT trap (cleanup function)
+    # - In orchestrated mode: credentials cleared by bootstrap.sh
+    # - In standalone mode: credentials cleared here, temp dir cleaned by EXIT trap
 }
 
 # Only run main when executed directly (not sourced via smart_import)

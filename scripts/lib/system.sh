@@ -1,6 +1,27 @@
 #!/bin/bash
-# Shared system detection functions
-# Consolidates duplicated architecture detection from multiple scripts
+# Shared system utilities
+# System detection, trap stacking, and other system-level utilities
+
+# Stack a new trap handler onto an existing trap
+# Usage: stack_trap "command" [SIGNAL]
+# Default signal is EXIT
+stack_trap() {
+    local new_trap=$1
+    local signal=${2:-EXIT}
+
+    # Get existing trap command for this signal
+    local existing_trap
+    existing_trap=$(trap -p "$signal" | sed -n "s/trap -- '\(.*\)' $signal/\1/p")
+
+    # Stack: run existing trap first, then new trap
+    if [[ -n "$existing_trap" ]]; then
+        # shellcheck disable=SC2064
+        trap "$existing_trap; $new_trap" "$signal"
+    else
+        # shellcheck disable=SC2064
+        trap "$new_trap" "$signal"
+    fi
+}
 
 # Detect and cache system architecture (only runs once per session)
 detect_system_architecture() {

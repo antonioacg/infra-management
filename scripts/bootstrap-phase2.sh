@@ -19,7 +19,6 @@ RESOURCE_TIER="small"
 ENVIRONMENT="production"
 SKIP_VALIDATION=false
 STOP_AFTER=""
-PHASE1_PRESERVED_DIR="/tmp/phase1-preserved-state"
 
 # Load import utility and logging library (bash 3.2+ compatible)
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
@@ -91,33 +90,26 @@ _parse_parameters() {
 
 # Global variables for cleanup
 MINIO_PF_PID=""
-BOOTSTRAP_STATE_DIR=""
-INFRA_DIR=""
 
-# PRIVATE: Cleanup resources on script exit
-_cleanup_on_exit() {
+# PRIVATE: Cleanup function for Phase 2
+_cleanup() {
     local exit_code=$?
 
-    log_info "[Phase 2] Cleaning up resources..."
+    log_info "🧹 [Phase 2] Cleaning up resources..."
 
-    # Kill port-forwards
+    # Kill port-forwards (phase-specific cleanup)
     if [[ -n "$MINIO_PF_PID" ]]; then
         kill "$MINIO_PF_PID" 2>/dev/null || true
         log_info "[Phase 2] Stopped MinIO port-forward (PID: $MINIO_PF_PID)"
     fi
 
-    # Clean up temporary directories
-    if [[ -n "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase2-bootstrap- ]]; then
-        log_info "[Phase 2] Removing temporary bootstrap directory: $BOOTSTRAP_STATE_DIR"
-        rm -rf "$BOOTSTRAP_STATE_DIR"
-    fi
+    # Clean shared temp directory (idempotent)
+    rm -rf /tmp/bootstrap-state 2>/dev/null || true
 
-    if [[ -n "$INFRA_DIR" && "$INFRA_DIR" =~ ^/tmp/phase2-infra- ]]; then
-        log_info "[Phase 2] Removing temporary infrastructure directory: $INFRA_DIR"
-        rm -rf "$INFRA_DIR"
-    fi
-
-    if [[ $exit_code -ne 0 ]]; then
+    # Show appropriate message based on exit code
+    if [[ $exit_code -eq 130 ]]; then
+        log_warning "[Phase 2] ⚠️  Script interrupted by user"
+    elif [[ $exit_code -ne 0 ]]; then
         log_error "[Phase 2] ❌ Phase 2 failed with exit code $exit_code"
         log_info "[Phase 2] 🔍 Check logs above for specific error details"
     fi
@@ -171,13 +163,13 @@ _migrate_bootstrap_state() {
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         BOOTSTRAP_STATE_DIR="$(dirname "$SCRIPT_DIR")/bootstrap-state"
     else
-        # Remote mode: use Phase 1 preserved state directory
-        BOOTSTRAP_STATE_DIR="$PHASE1_PRESERVED_DIR"
+        # Remote mode: use shared bootstrap temp directory
+        BOOTSTRAP_STATE_DIR="${BOOTSTRAP_TEMP_DIR:-/tmp/bootstrap-state}"
 
-        # Verify preserved state exists
+        # Verify state directory exists
         if [[ ! -d "$BOOTSTRAP_STATE_DIR" ]]; then
-            log_error "[Phase 2a] ❌ Phase 1 preserved state not found: $BOOTSTRAP_STATE_DIR"
-            log_error "[Phase 2a] Phase 1 must run with --preserve-state before Phase 2"
+            log_error "[Phase 2a] ❌ Bootstrap state directory not found: $BOOTSTRAP_STATE_DIR"
+            log_error "[Phase 2a] Phase 1 must run before Phase 2"
             exit 1
         fi
 
@@ -186,7 +178,7 @@ _migrate_bootstrap_state() {
             exit 1
         fi
 
-        log_success "[Phase 2a] ✅ Using Phase 1 preserved state: $BOOTSTRAP_STATE_DIR"
+        log_success "[Phase 2a] ✅ Using Phase 1 state: $BOOTSTRAP_STATE_DIR"
     fi
 
     cd "$BOOTSTRAP_STATE_DIR"
@@ -352,8 +344,9 @@ main() {
         _parse_parameters "$@"
     fi
 
-    # Set up cleanup trap
-    trap _cleanup_on_exit EXIT
+    # Stack cleanup trap (runs after all other phases in orchestrated mode)
+    # Handles both success and failure (including user interrupts)
+    stack_trap "_cleanup" EXIT
 
     print_banner "🚀 Phase 2: State Migration + Infrastructure" "Remote-first enterprise deployment" "Environment: $ENVIRONMENT, Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
 

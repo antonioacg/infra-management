@@ -61,6 +61,29 @@ _parse_parameters() {
     done
 }
 
+# PRIVATE: Cleanup function for Phase 0
+_cleanup() {
+    local exit_code=$?
+
+    # Phase 0 has no resources to clean up (just validation and tool installation)
+
+    # Show appropriate message based on exit code
+    if [[ $exit_code -eq 130 ]]; then
+        log_warning "[Phase 0] ⚠️  Script interrupted by user"
+    elif [[ $exit_code -ne 0 ]]; then
+        log_error "[Phase 0] ❌ Phase 0 failed with exit code $exit_code"
+        log_info ""
+        log_info "🔍 Debugging information:"
+        log_info "  • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
+        log_info "  • Architecture: ${DETECTED_OS:-unknown}/${DETECTED_ARCH:-unknown}"
+        log_info ""
+        log_info "🔧 Recovery options:"
+        log_info "  1. Check system requirements: curl, git"
+        log_info "  2. Verify GITHUB_TOKEN is set correctly"
+        log_info "  3. Retry Phase 0: curl ... (run this script again)"
+        log_info ""
+    fi
+}
 
 # PRIVATE: Validate environment prerequisites for Phase 0
 _validate_environment() {
@@ -149,39 +172,6 @@ _configure_environment() {
     log_success "[Phase 0c] ✅ Environment configured"
 }
 
-# PRIVATE: Cleanup resources and provide helpful error information
-_cleanup_on_error() {
-    local exit_code=$?
-    local line_number=$1
-
-    if [[ $exit_code -ne 0 ]]; then
-        log_info ""
-        log_error "[Phase 0] ❌ Testing failed at line $line_number with exit code $exit_code"
-        log_info ""
-        log_info "🔍 Debugging information:"
-        log_info "  • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
-        log_info "  • Architecture: ${DETECTED_OS:-unknown}/${DETECTED_ARCH:-unknown}"
-        log_info "  • Failed phase: $(get_current_phase)"
-        log_info ""
-        log_info "🔧 Recovery options:"
-        log_info "  1. Check logs above for specific error details"
-        log_info "  2. Run cleanup: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force"
-        log_info "  3. Retry Phase 0: curl ... (run this script again)"
-        log_info ""
-        exit $exit_code
-    fi
-}
-
-# PRIVATE: Get current bootstrap phase for error reporting
-_get_current_phase() {
-    if ! command -v terraform >/dev/null 2>&1; then
-        echo "Phase 0b: Tool Installation"
-    elif [[ -z "$GITHUB_TOKEN" ]]; then
-        echo "Phase 0c: Configuration"
-    else
-        echo "Phase 0: Complete"
-    fi
-}
 
 # PRIVATE: Print success message with next steps
 _print_success_message() {
@@ -212,9 +202,9 @@ main() {
         _parse_parameters "$@"
     fi
 
-    # Set up comprehensive error handling
-    trap '_cleanup_on_error $LINENO' ERR
-    trap 'log_warning "[Phase 0] Script interrupted by user"; exit 130' INT TERM
+    # Stack cleanup trap (runs after all other phases in orchestrated mode)
+    # Handles both success and failure (including user interrupts)
+    stack_trap "_cleanup" EXIT
 
     print_banner "🧪 Enterprise Platform Phase 0 Testing" \
                  "📋 Environment + Tools Validation Only" \
