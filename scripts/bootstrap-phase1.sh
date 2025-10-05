@@ -11,6 +11,8 @@ GIT_REF="${GIT_REF:-main}"
 NODE_COUNT=1
 RESOURCE_TIER="small"
 SKIP_VALIDATION=false
+PRESERVE_STATE=false
+PHASE1_PRESERVED_DIR="/tmp/phase1-preserved-state"
 
 # Load import utility and logging library (bash 3.2+ compatible)
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
@@ -35,8 +37,8 @@ _parse_parameters() {
                 SKIP_VALIDATION=true
                 shift
                 ;;
-            --preserve-credentials)
-                PRESERVE_CREDENTIALS=true
+            --preserve-state)
+                PRESERVE_STATE=true
                 shift
                 ;;
             --help|-h)
@@ -50,7 +52,7 @@ _parse_parameters() {
                 echo "  --nodes=N                Number of nodes (default: 1)"
                 echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
                 echo "  --skip-validation        Skip environment validation (when called from main bootstrap)"
-                echo "  --preserve-credentials   Preserve credentials for orchestrated execution"
+                echo "  --preserve-state         Preserve state and credentials for Phase 2"
                 echo "  --help, -h               Show this help message"
                 echo ""
                 echo "Environment Variables:"
@@ -66,7 +68,7 @@ _parse_parameters() {
                 echo "  --nodes=N                Number of nodes (default: 1)"
                 echo "  --tier=SIZE              Resource tier: small|medium|large (default: small)"
                 echo "  --skip-validation        Skip environment validation"
-                echo "  --preserve-credentials   Preserve credentials for orchestration"
+                echo "  --preserve-state         Preserve state and credentials for Phase 2"
                 echo "  --help, -h               Show this help message"
                 echo ""
                 exit 1
@@ -702,7 +704,7 @@ main() {
     log_phase "🚀 Phase 1: Complete!"
 
     # Conditional credential cleanup
-    if [[ "$PRESERVE_CREDENTIALS" == "true" ]]; then
+    if [[ "$PRESERVE_STATE" == "true" ]]; then
         log_info "[Phase 1] 🔒 Preserving credentials for orchestrated execution"
         log_info "[Phase 1] ⚠️  Credentials will be cleared by orchestrator after Phase 2"
         log_info "[Phase 1] ℹ️  This is only safe when called from bootstrap.sh orchestrator"
@@ -714,8 +716,29 @@ main() {
 
     _print_success_message
 
-    # Clean up temporary directory in remote mode
-    if [[ "${USE_LOCAL_IMPORTS:-false}" != "true" && -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
+    # Preserve state for Phase 2 or clean up
+    if [[ "$PRESERVE_STATE" == "true" && "${USE_LOCAL_IMPORTS:-false}" != "true" ]]; then
+        # Preserve state and config for Phase 2
+        log_info "[Phase 1] 📂 Preserving state for Phase 2: $PHASE1_PRESERVED_DIR"
+
+        # Remove existing preserved directory if it exists (idempotent)
+        rm -rf "$PHASE1_PRESERVED_DIR"
+        mkdir -p "$PHASE1_PRESERVED_DIR"
+
+        # Copy only what Phase 2 needs
+        cp "$BOOTSTRAP_STATE_DIR/terraform.tfstate" "$PHASE1_PRESERVED_DIR/"
+        cp "$BOOTSTRAP_STATE_DIR/backend-remote.hcl" "$PHASE1_PRESERVED_DIR/"
+
+        log_success "[Phase 1] ✅ State preserved for Phase 2"
+        log_info "[Phase 1]   • terraform.tfstate → $PHASE1_PRESERVED_DIR/"
+        log_info "[Phase 1]   • backend-remote.hcl → $PHASE1_PRESERVED_DIR/"
+
+        # Clean up original temp directory
+        if [[ -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
+            rm -rf "$BOOTSTRAP_STATE_DIR"
+        fi
+    elif [[ "${USE_LOCAL_IMPORTS:-false}" != "true" && -d "$BOOTSTRAP_STATE_DIR" && "$BOOTSTRAP_STATE_DIR" =~ ^/tmp/phase1-terraform- ]]; then
+        # Standalone execution - clean up temp directory
         log_info "[Phase 1] Cleaning up temporary directory: $BOOTSTRAP_STATE_DIR"
         rm -rf "$BOOTSTRAP_STATE_DIR"
     fi

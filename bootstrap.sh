@@ -128,15 +128,15 @@ else
     log_info "Skipping Phase 0 (starting from Phase $START_PHASE)"
 fi
 
-# Phase 1: k3s + Bootstrap Storage (preserve credentials for Phase 2)
+# Phase 1: k3s + Bootstrap Storage (preserve state for Phase 2)
 if [[ $START_PHASE -le 1 ]]; then
     log_phase "Phase 1: k3s + Bootstrap Storage"
 
     # Import and call phase script
     smart_import "infra-management/scripts/bootstrap-phase1.sh"
 
-    # Run Phase 1 without subshell to preserve credentials
-    if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-credentials; then
+    # Run Phase 1 without subshell to preserve credentials and state
+    if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-state; then
         log_success "Phase 1 completed (credentials preserved for Phase 2)"
         # Unset main to avoid collision with next phase
         unset -f main
@@ -157,7 +157,7 @@ else
     log_info "Skipping Phase 1 (starting from Phase $START_PHASE)"
 fi
 
-# Phase 2: State migration + Infrastructure (uses preserved credentials)
+# Phase 2: State migration + Infrastructure (uses preserved credentials and state)
 if [[ $START_PHASE -le 2 ]]; then
     log_phase "Phase 2: State migration + Infrastructure"
 
@@ -182,7 +182,7 @@ if [[ $START_PHASE -le 2 ]]; then
             clear_bootstrap_credentials
             log_info "🔒 Credentials cleared from memory after successful Phase 2"
         else
-            # Subphase stop - preserve credentials
+            # Subphase stop - preserve credentials and state
             log_info "🔒 Credentials preserved in memory (stopped at $STOP_AFTER)"
         fi
 
