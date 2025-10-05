@@ -127,10 +127,23 @@ fi
 # Phase 1: k3s + Bootstrap Storage (preserve credentials for Phase 2)
 if [[ $START_PHASE -le 1 ]]; then
     log_phase "Phase 1: k3s + Bootstrap Storage"
-    if (
+
+    # Capture credentials from Phase 1 subshell via stdout
+    PHASE1_CREDS=$(
         smart_import "infra-management/scripts/bootstrap-phase1.sh"
-        main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-credentials
-    ); then
+        if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-credentials; then
+            # Output credentials for parent shell to capture
+            echo "export TF_VAR_minio_access_key='$TF_VAR_minio_access_key'"
+            echo "export TF_VAR_minio_secret_key='$TF_VAR_minio_secret_key'"
+            echo "export TF_VAR_postgres_password='$TF_VAR_postgres_password'"
+        else
+            exit 1
+        fi
+    )
+
+    if [[ $? -eq 0 ]]; then
+        # Import credentials into current shell
+        eval "$PHASE1_CREDS"
         log_success "Phase 1 completed (credentials preserved for Phase 2)"
         if [[ "$STOP_AFTER" == "1" ]]; then
             print_banner "✅ Stopped after Phase 1" "Foundation ready" "Credentials preserved in memory. Next: Run with --start-phase=2"
