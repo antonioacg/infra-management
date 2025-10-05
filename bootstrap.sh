@@ -108,19 +108,20 @@ print_banner "🚀 Enterprise Platform Bootstrap" "Ultra-streamlined orchestrato
 if [[ $START_PHASE -le 0 ]]; then
     log_phase "Phase 0: Environment + Tools validation"
 
-    # Import and rename main to avoid collision
+    # Import and call phase script
     smart_import "infra-management/scripts/bootstrap-phase0.sh"
-    phase0_main() { main "$@"; }
-    unset -f main
 
-    if phase0_main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
+    if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 0 completed"
+        # Unset main to avoid collision with next phase
+        unset -f main
         if [[ "$STOP_AFTER" == "0" ]]; then
             print_banner "✅ Stopped after Phase 0" "Tools validated" "Next: Run with --start-phase=1"
             exit 0
         fi
     else
         log_error "Phase 0 failed"
+        unset -f main
         exit 1
     fi
 else
@@ -131,20 +132,22 @@ fi
 if [[ $START_PHASE -le 1 ]]; then
     log_phase "Phase 1: k3s + Bootstrap Storage"
 
-    # Import and rename main to avoid collision with Phase 0
+    # Import and call phase script
     smart_import "infra-management/scripts/bootstrap-phase1.sh"
-    phase1_main() { main "$@"; }
-    unset -f main
 
     # Run Phase 1 without subshell to preserve credentials
-    if phase1_main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-credentials; then
+    if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-credentials; then
         log_success "Phase 1 completed (credentials preserved for Phase 2)"
+        # Unset main to avoid collision with next phase
+        unset -f main
         if [[ "$STOP_AFTER" == "1" ]]; then
             print_banner "✅ Stopped after Phase 1" "Foundation ready" "Credentials preserved in memory. Next: Run with --start-phase=2"
             exit 0
         fi
     else
         log_error "Phase 1 failed"
+        # Unset main before exit
+        unset -f main
         # Import credentials.sh to clear credentials on failure
         smart_import "infra-management/scripts/lib/credentials.sh"
         clear_bootstrap_credentials
@@ -164,13 +167,13 @@ if [[ $START_PHASE -le 2 ]]; then
         PHASE2_ARGS="$PHASE2_ARGS --stop-after=$STOP_AFTER"
     fi
 
-    # Import and rename main to avoid collision
+    # Import and call phase script
     smart_import "infra-management/scripts/bootstrap-phase2.sh"
-    phase2_main() { main "$@"; }
-    unset -f main
 
-    if phase2_main $PHASE2_ARGS; then
+    if main $PHASE2_ARGS; then
         log_success "Phase 2 completed"
+        # Unset main to avoid collision with next phase
+        unset -f main
 
         # Only clean up credentials if we completed full Phase 2 (not a subphase stop)
         if [[ -z "$STOP_AFTER" || "$STOP_AFTER" == "2" ]]; then
@@ -189,6 +192,8 @@ if [[ $START_PHASE -le 2 ]]; then
         fi
     else
         log_error "Phase 2 failed"
+        # Unset main before exit
+        unset -f main
         # Clean up credentials on failure
         smart_import "infra-management/scripts/lib/credentials.sh"
         clear_bootstrap_credentials
