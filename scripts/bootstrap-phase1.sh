@@ -492,6 +492,14 @@ _prepare_terraform_workspace() {
         log_success "[Phase 1c] ✅ Using local Terraform files: $(pwd)"
     else
         # Remote usage: use terraform init -from-module to download files
+
+        # Remove directory if it exists (idempotent)
+        if [[ -d "$BOOTSTRAP_STATE_DIR" ]]; then
+            log_info "[Phase 1c] Removing existing bootstrap directory..."
+            rm -rf "${BOOTSTRAP_STATE_DIR:?}"
+        fi
+
+        mkdir -p "$BOOTSTRAP_STATE_DIR"
         cd "$BOOTSTRAP_STATE_DIR"
 
         log_info "[Phase 1c] Downloading Terraform files from GitHub..."
