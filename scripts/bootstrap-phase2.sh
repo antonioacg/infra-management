@@ -217,14 +217,24 @@ EOF
             exit 1
         fi
 
+        # Set AWS credentials for S3 backend (MinIO compatibility)
+        export AWS_ACCESS_KEY_ID="$TF_VAR_minio_access_key"
+        export AWS_SECRET_ACCESS_KEY="$TF_VAR_minio_secret_key"
+
+        # Log credential status (not the actual values)
+        if [[ -n "$AWS_ACCESS_KEY_ID" && -n "$AWS_SECRET_ACCESS_KEY" ]]; then
+            log_info "[Phase 2a] Credentials configured: access_key=${AWS_ACCESS_KEY_ID:0:8}..., secret_key=${AWS_SECRET_ACCESS_KEY:0:8}..."
+        else
+            log_error "[Phase 2a] ❌ Credentials missing: AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-EMPTY}, AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-EMPTY}"
+            exit 1
+        fi
+
         # Migrate state using backend-config file + runtime overrides
         log_info "[Phase 2a] Migrating state to remote backend..."
         terraform init -migrate-state \
             -backend-config=backend-remote.hcl \
             -backend-config="key=${ENVIRONMENT}/bootstrap/terraform.tfstate" \
             -backend-config="endpoint=http://localhost:9000" \
-            -backend-config="access_key=${TF_VAR_minio_access_key}" \
-            -backend-config="secret_key=${TF_VAR_minio_secret_key}" \
             -force-copy
 
         # Verify migration
