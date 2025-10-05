@@ -65,8 +65,6 @@ _parse_parameters() {
 _cleanup() {
     local exit_code=$?
 
-    log_info "🧹 [Phase 0] Cleanup running..."
-
     # Phase 0 has no resources to clean up (just validation and tool installation)
 
     # Show appropriate message based on exit code

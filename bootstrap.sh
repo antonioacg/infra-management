@@ -137,7 +137,6 @@ if [[ $START_PHASE -le 0 ]]; then
     # Preserve bootstrap's cleanup before Phase 0 overwrites it
     rename_function "_cleanup" "_cleanup_bootstrap"
     stack_trap "_cleanup_bootstrap" EXIT
-    log_info "DEBUG: After stacking bootstrap cleanup: $(trap -p EXIT)"
 
     # Import and call phase script
     smart_import "infra-management/scripts/bootstrap-phase0.sh"
@@ -148,13 +147,11 @@ if [[ $START_PHASE -le 0 ]]; then
         # Preserve Phase 0's cleanup before Phase 1 overwrites it
         rename_function "_cleanup" "_cleanup_phase0"
         stack_trap "_cleanup_phase0" EXIT
-        log_info "DEBUG: After stacking Phase 0 cleanup: $(trap -p EXIT)"
 
         # Unset main and _cleanup to avoid collision with next phase
         unset -f main _cleanup
 
         if [[ "$STOP_AFTER" == "0" ]]; then
-            log_info "DEBUG: Before exit at Phase 0: $(trap -p EXIT)"
             print_banner "✅ Stopped after Phase 0" "Tools validated" "Next: Run with --start-phase=1"
             exit 0
         fi
@@ -181,13 +178,11 @@ if [[ $START_PHASE -le 1 ]]; then
         # Preserve Phase 1's cleanup before Phase 2 overwrites it
         rename_function "_cleanup" "_cleanup_phase1"
         stack_trap "_cleanup_phase1" EXIT
-        log_info "DEBUG: After stacking Phase 1 cleanup: $(trap -p EXIT)"
 
         # Unset main and _cleanup to avoid collision with next phase
         unset -f main _cleanup
 
         if [[ "$STOP_AFTER" == "1" ]]; then
-            log_info "DEBUG: Before exit at Phase 1: $(trap -p EXIT)"
             print_banner "✅ Stopped after Phase 1" "Foundation ready" "Credentials preserved in memory. Next: Run with --start-phase=2"
             exit 0
         fi
