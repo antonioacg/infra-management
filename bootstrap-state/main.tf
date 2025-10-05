@@ -45,10 +45,8 @@ resource "helm_release" "bootstrap_minio" {
   values = [yamlencode({
     mode = var.node_count == 1 ? "standalone" : "distributed"
     replicas = var.node_count
-    auth = {
-      rootUser     = var.minio_access_key
-      rootPassword = var.minio_secret_key
-    }
+    rootUser     = var.minio_root_user
+    rootPassword = var.minio_root_password
     defaultBuckets = "terraform-state,vault-storage,vault-backups"
     persistence = {
       enabled      = true

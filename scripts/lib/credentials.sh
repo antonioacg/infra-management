@@ -37,26 +37,26 @@ _generate_secure_credential() {
 _generate_minio_credentials() {
     log_info "Generating secure MinIO credentials in-memory..."
 
-    # Generate access key with admin prefix and hex pattern
-    _generate_secure_credential 8 "a-f0-9" MINIO_ACCESS_KEY "admin-"
+    # Generate root user with admin prefix and hex pattern
+    _generate_secure_credential 8 "a-f0-9" MINIO_ROOT_USER "admin-"
 
-    # Generate secret key
-    _generate_secure_credential 24 "a-zA-Z0-9" MINIO_SECRET_KEY
+    # Generate root password
+    _generate_secure_credential 24 "a-zA-Z0-9" MINIO_ROOT_PASSWORD
 
     # Validate credentials format
-    if [[ ! "$MINIO_ACCESS_KEY" =~ ^admin-[a-f0-9]{8}$ ]]; then
-        log_error "Generated access key has invalid format: $MINIO_ACCESS_KEY"
+    if [[ ! "$MINIO_ROOT_USER" =~ ^admin-[a-f0-9]{8}$ ]]; then
+        log_error "Generated root user has invalid format: $MINIO_ROOT_USER"
         exit 1
     fi
 
-    if [[ ${#MINIO_SECRET_KEY} -lt 20 ]]; then
-        log_error "Generated secret key too short: ${#MINIO_SECRET_KEY} characters"
+    if [[ ${#MINIO_ROOT_PASSWORD} -lt 20 ]]; then
+        log_error "Generated root password too short: ${#MINIO_ROOT_PASSWORD} characters"
         exit 1
     fi
 
     # Export for Terraform
-    export TF_VAR_minio_access_key="$MINIO_ACCESS_KEY"
-    export TF_VAR_minio_secret_key="$MINIO_SECRET_KEY"
+    export TF_VAR_minio_root_user="$MINIO_ROOT_USER"
+    export TF_VAR_minio_root_password="$MINIO_ROOT_PASSWORD"
 
     return 0
 }
@@ -115,7 +115,7 @@ _clear_credentials() {
 # PRIVATE: Individual credential validation functions
 _validate_minio_credentials() {
     _validate_credentials "MinIO" "generate_bootstrap_credentials" \
-        "TF_VAR_minio_access_key" "TF_VAR_minio_secret_key"
+        "TF_VAR_minio_root_user" "TF_VAR_minio_root_password"
 }
 
 _validate_postgresql_credentials() {
@@ -126,8 +126,8 @@ _validate_postgresql_credentials() {
 # PRIVATE: Individual credential clearing functions
 _clear_minio_credentials() {
     _clear_credentials "MinIO" \
-        "TF_VAR_minio_access_key" "TF_VAR_minio_secret_key" \
-        "MINIO_ACCESS_KEY" "MINIO_SECRET_KEY"
+        "TF_VAR_minio_root_user" "TF_VAR_minio_root_password" \
+        "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD"
 }
 
 _clear_postgresql_credentials() {
