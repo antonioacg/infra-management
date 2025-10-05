@@ -221,11 +221,15 @@ EOF
         export AWS_ACCESS_KEY_ID="$TF_VAR_minio_access_key"
         export AWS_SECRET_ACCESS_KEY="$TF_VAR_minio_secret_key"
 
-        # Log credential status (not the actual values)
-        if [[ -n "$AWS_ACCESS_KEY_ID" && -n "$AWS_SECRET_ACCESS_KEY" ]]; then
-            log_info "[Phase 2a] Credentials configured: access_key=${AWS_ACCESS_KEY_ID:0:8}..., secret_key=${AWS_SECRET_ACCESS_KEY:0:8}..."
-        else
-            log_error "[Phase 2a] ❌ Credentials missing: AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-EMPTY}, AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-EMPTY}"
+        # TESTING: Log full credentials for debugging
+        log_info "[Phase 2a] TESTING - Full credentials:"
+        log_info "[Phase 2a]   TF_VAR_minio_access_key=$TF_VAR_minio_access_key"
+        log_info "[Phase 2a]   TF_VAR_minio_secret_key=$TF_VAR_minio_secret_key"
+        log_info "[Phase 2a]   AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+        log_info "[Phase 2a]   AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+
+        if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
+            log_error "[Phase 2a] ❌ Credentials missing!"
             exit 1
         fi
 
