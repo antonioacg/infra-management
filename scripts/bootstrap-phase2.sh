@@ -187,8 +187,23 @@ _migrate_bootstrap_state() {
     if [[ -f "terraform.tfstate" && -s "terraform.tfstate" ]]; then
         log_info "[Phase 2a] Found local state, performing migration..."
 
-        # Backup local state
+        # Backup local state and backend config
         cp terraform.tfstate "terraform.tfstate.backup.$(date +%Y%m%d_%H%M%S)"
+        cp backend.tf "backend.tf.backup.$(date +%Y%m%d_%H%M%S)"
+
+        # Update backend.tf to use S3 backend for migration
+        log_info "[Phase 2a] Updating backend configuration to S3..."
+        cat > backend.tf <<'EOF'
+# Bootstrap State Backend Configuration
+# Migrated to remote S3 backend (MinIO)
+
+terraform {
+  # Remote S3 backend (MinIO) - partial configuration
+  # Full config provided via backend-remote.hcl + runtime flags
+  backend "s3" {
+  }
+}
+EOF
 
         # Port-forward to MinIO for migration
         log_info "[Phase 2a] Starting port-forward to MinIO..."
