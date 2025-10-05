@@ -23,6 +23,23 @@ stack_trap() {
     fi
 }
 
+# Rename a function to preserve it before it gets overwritten
+# Usage: rename_function "old_name" "new_name"
+# Creates an independent copy of the function with a new name using declare -f
+rename_function() {
+    local old_name=$1
+    local new_name=$2
+
+    # Check if original function exists
+    if ! declare -f "$old_name" >/dev/null 2>&1; then
+        return 1  # Function doesn't exist
+    fi
+
+    # Create independent copy with new name
+    # Uses declare -f to get full function definition, sed to rename it
+    eval "$(declare -f "$old_name" | sed "1s/^${old_name} /${new_name} /")"
+}
+
 # Detect and cache system architecture (only runs once per session)
 detect_system_architecture() {
     # Return early if already detected

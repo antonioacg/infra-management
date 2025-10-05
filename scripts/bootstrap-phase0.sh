@@ -202,10 +202,6 @@ main() {
         _parse_parameters "$@"
     fi
 
-    # Stack cleanup trap (runs after all other phases in orchestrated mode)
-    # Handles both success and failure (including user interrupts)
-    stack_trap "_cleanup" EXIT
-
     print_banner "🧪 Enterprise Platform Phase 0 Testing" \
                  "📋 Environment + Tools Validation Only" \
                  "🎯 Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier"
@@ -228,5 +224,8 @@ main() {
 # Only run main when executed directly (not sourced via smart_import)
 # Handles: direct execution, curl piping, but NOT sourcing via smart_import
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
+    # Stack cleanup trap , handles both success and failure (including user interrupts)
+    stack_trap "_cleanup" EXIT
+
     main "$@"
 fi

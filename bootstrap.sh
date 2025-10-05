@@ -142,15 +142,21 @@ if [[ $START_PHASE -le 0 ]]; then
 
     if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 0 completed"
+
+        # Preserve cleanup function before it gets overwritten
+        rename_function "_cleanup" "_cleanup_phase0"
+        stack_trap "_cleanup_phase0" EXIT
+
         # Unset main to avoid collision with next phase
-        unset -f main
+        unset -f main _cleanup
+
         if [[ "$STOP_AFTER" == "0" ]]; then
             print_banner "✅ Stopped after Phase 0" "Tools validated" "Next: Run with --start-phase=1"
             exit 0
         fi
     else
         log_error "Phase 0 failed"
-        unset -f main
+        unset -f main _cleanup
         exit 1
     fi
 else
@@ -167,8 +173,14 @@ if [[ $START_PHASE -le 1 ]]; then
     # Run Phase 1 without subshell to preserve credentials
     if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 1 completed (credentials preserved for Phase 2)"
+
+        # Preserve cleanup function before it gets overwritten
+        rename_function "_cleanup" "_cleanup_phase1"
+        stack_trap "_cleanup_phase1" EXIT
+
         # Unset main to avoid collision with next phase
-        unset -f main
+        unset -f main _cleanup
+
         if [[ "$STOP_AFTER" == "1" ]]; then
             print_banner "✅ Stopped after Phase 1" "Foundation ready" "Credentials preserved in memory. Next: Run with --start-phase=2"
             exit 0
@@ -176,7 +188,7 @@ if [[ $START_PHASE -le 1 ]]; then
     else
         log_error "Phase 1 failed"
         # Unset main before exit
-        unset -f main
+        unset -f main _cleanup
         # Import credentials.sh to clear credentials on failure
         smart_import "infra-management/scripts/lib/credentials.sh"
         clear_bootstrap_credentials
@@ -201,8 +213,13 @@ if [[ $START_PHASE -le 2 ]]; then
 
     if main $PHASE2_ARGS; then
         log_success "Phase 2 completed"
+
+        # Preserve cleanup function before it gets overwritten
+        rename_function "_cleanup" "_cleanup_phase2"
+        stack_trap "_cleanup_phase2" EXIT
+
         # Unset main to avoid collision with next phase
-        unset -f main
+        unset -f main _cleanup
 
         # Only clean up credentials if we completed full Phase 2 (not a subphase stop)
         if [[ -z "$STOP_AFTER" || "$STOP_AFTER" == "2" ]]; then
@@ -222,7 +239,7 @@ if [[ $START_PHASE -le 2 ]]; then
     else
         log_error "Phase 2 failed"
         # Unset main before exit
-        unset -f main
+        unset -f main _cleanup
         # Clean up credentials on failure
         smart_import "infra-management/scripts/lib/credentials.sh"
         clear_bootstrap_credentials
