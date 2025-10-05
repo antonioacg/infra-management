@@ -47,7 +47,23 @@ resource "helm_release" "bootstrap_minio" {
     replicas = var.node_count
     rootUser     = var.minio_root_user
     rootPassword = var.minio_root_password
-    defaultBuckets = "terraform-state,vault-storage,vault-backups"
+    buckets = [
+      {
+        name   = "terraform-state"
+        policy = "none"
+        purge  = false
+      },
+      {
+        name   = "vault-storage"
+        policy = "none"
+        purge  = false
+      },
+      {
+        name   = "vault-backups"
+        policy = "none"
+        purge  = false
+      }
+    ]
     persistence = {
       enabled      = true
       size         = var.minio_storage_size
