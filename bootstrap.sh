@@ -107,10 +107,13 @@ print_banner "🚀 Enterprise Platform Bootstrap" "Ultra-streamlined orchestrato
 # Phase 0: Environment + Tools validation
 if [[ $START_PHASE -le 0 ]]; then
     log_phase "Phase 0: Environment + Tools validation"
-    if (
-        smart_import "infra-management/scripts/bootstrap-phase0.sh"
-        main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"
-    ); then
+
+    # Import and rename main to avoid collision
+    smart_import "infra-management/scripts/bootstrap-phase0.sh"
+    phase0_main() { main "$@"; }
+    unset -f main
+
+    if phase0_main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 0 completed"
         if [[ "$STOP_AFTER" == "0" ]]; then
             print_banner "✅ Stopped after Phase 0" "Tools validated" "Next: Run with --start-phase=1"
@@ -128,22 +131,13 @@ fi
 if [[ $START_PHASE -le 1 ]]; then
     log_phase "Phase 1: k3s + Bootstrap Storage"
 
-    # Capture credentials from Phase 1 subshell via stdout
-    PHASE1_CREDS=$(
-        smart_import "infra-management/scripts/bootstrap-phase1.sh"
-        if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-credentials; then
-            # Output credentials for parent shell to capture
-            echo "export TF_VAR_minio_access_key='$TF_VAR_minio_access_key'"
-            echo "export TF_VAR_minio_secret_key='$TF_VAR_minio_secret_key'"
-            echo "export TF_VAR_postgres_password='$TF_VAR_postgres_password'"
-        else
-            exit 1
-        fi
-    )
+    # Import and rename main to avoid collision with Phase 0
+    smart_import "infra-management/scripts/bootstrap-phase1.sh"
+    phase1_main() { main "$@"; }
+    unset -f main
 
-    if [[ $? -eq 0 ]]; then
-        # Import credentials into current shell
-        eval "$PHASE1_CREDS"
+    # Run Phase 1 without subshell to preserve credentials
+    if phase1_main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER" --preserve-credentials; then
         log_success "Phase 1 completed (credentials preserved for Phase 2)"
         if [[ "$STOP_AFTER" == "1" ]]; then
             print_banner "✅ Stopped after Phase 1" "Foundation ready" "Credentials preserved in memory. Next: Run with --start-phase=2"
@@ -170,10 +164,12 @@ if [[ $START_PHASE -le 2 ]]; then
         PHASE2_ARGS="$PHASE2_ARGS --stop-after=$STOP_AFTER"
     fi
 
-    if (
-        smart_import "infra-management/scripts/bootstrap-phase2.sh"
-        main $PHASE2_ARGS
-    ); then
+    # Import and rename main to avoid collision
+    smart_import "infra-management/scripts/bootstrap-phase2.sh"
+    phase2_main() { main "$@"; }
+    unset -f main
+
+    if phase2_main $PHASE2_ARGS; then
         log_success "Phase 2 completed"
 
         # Only clean up credentials if we completed full Phase 2 (not a subphase stop)
