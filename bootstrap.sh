@@ -44,9 +44,6 @@ _cleanup() {
     fi
 }
 
-# Stack cleanup trap (will run after all phase cleanups)
-stack_trap "_cleanup" EXIT
-
 # Parse parameters
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -137,17 +134,21 @@ print_banner "🚀 Enterprise Platform Bootstrap" "Ultra-streamlined orchestrato
 if [[ $START_PHASE -le 0 ]]; then
     log_phase "Phase 0: Environment + Tools validation"
 
+    # Preserve bootstrap's cleanup before Phase 0 overwrites it
+    rename_function "_cleanup" "_cleanup_bootstrap"
+    stack_trap "_cleanup_bootstrap" EXIT
+
     # Import and call phase script
     smart_import "infra-management/scripts/bootstrap-phase0.sh"
 
     if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 0 completed"
 
-        # Preserve cleanup function before it gets overwritten
+        # Preserve Phase 0's cleanup before Phase 1 overwrites it
         rename_function "_cleanup" "_cleanup_phase0"
         stack_trap "_cleanup_phase0" EXIT
 
-        # Unset main to avoid collision with next phase
+        # Unset main and _cleanup to avoid collision with next phase
         unset -f main _cleanup
 
         if [[ "$STOP_AFTER" == "0" ]]; then
@@ -174,11 +175,11 @@ if [[ $START_PHASE -le 1 ]]; then
     if main --nodes="$NODE_COUNT" --tier="$RESOURCE_TIER"; then
         log_success "Phase 1 completed (credentials preserved for Phase 2)"
 
-        # Preserve cleanup function before it gets overwritten
+        # Preserve Phase 1's cleanup before Phase 2 overwrites it
         rename_function "_cleanup" "_cleanup_phase1"
         stack_trap "_cleanup_phase1" EXIT
 
-        # Unset main to avoid collision with next phase
+        # Unset main and _cleanup to avoid collision with next phase
         unset -f main _cleanup
 
         if [[ "$STOP_AFTER" == "1" ]]; then
@@ -214,11 +215,11 @@ if [[ $START_PHASE -le 2 ]]; then
     if main $PHASE2_ARGS; then
         log_success "Phase 2 completed"
 
-        # Preserve cleanup function before it gets overwritten
+        # Preserve Phase 2's cleanup before next phase overwrites it
         rename_function "_cleanup" "_cleanup_phase2"
         stack_trap "_cleanup_phase2" EXIT
 
-        # Unset main to avoid collision with next phase
+        # Unset main and _cleanup to avoid collision with next phase
         unset -f main _cleanup
 
         # Only clean up credentials if we completed full Phase 2 (not a subphase stop)
