@@ -386,21 +386,94 @@ print_success() {
     print_banner "🎉 CLEANUP COMPLETE!" "Your system is now ready for a fresh bootstrap" "Next steps: Run bootstrap script for fresh deployment"
 }
 
+# PRIVATE: Parse command-line parameters
+_parse_parameters() {
+    local force_cleanup_var=""
+    local kubectl_contexts_var=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force)
+                force_cleanup_var=true
+                shift
+                ;;
+            --contexts=*)
+                kubectl_contexts_var="${1#*=}"
+                shift
+                ;;
+            --help|-h)
+                echo "Enterprise Homelab Cleanup Script"
+                echo
+                echo "Usage:"
+                echo "  $0 [OPTIONS]"
+                echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- [--force]"
+                echo
+                echo "Options:"
+                echo "  --force        Skip confirmation prompt"
+                echo "  --skip-phase0  Preserve tools and directories (only remove k3s)"
+                echo "  --contexts     Comma-separated list of kubectl contexts to remove"
+                echo "  --help         Show this help message"
+                echo
+                echo "Examples:"
+                echo "  # Interactive cleanup with confirmation"
+                echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash"
+                echo
+                echo "  # Force cleanup without confirmation"
+                echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force"
+                echo
+                echo "  # Quick cleanup preserving Phase 0 state"
+                echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force --skip-phase0"
+                echo
+                echo "This script can remove bootstrap components in two modes:"
+                echo
+                echo "Full cleanup (default):"
+                echo "  • k3s cluster and all Kubernetes resources"
+                echo "  • All installed tools (kubectl, terraform, helm, flux, yq, vault)"
+                echo "  • All bootstrap directories and temporary files"
+                echo "  • All running port-forwards and background processes"
+                echo
+                echo "Phase 0 preservation (--skip-phase0):"
+                echo "  • k3s cluster and all Kubernetes resources"
+                echo "  • kubectl config contexts for k3s"
+                echo "  • All running port-forwards and k3s processes"
+                echo "  • Tools and bootstrap directories are preserved"
+                exit 0
+                ;;
+            *)
+                echo "Error: Unknown parameter: $1"
+                echo ""
+                echo "Usage: $0 [OPTIONS]"
+                echo "  --force        Skip confirmation prompt"
+                echo "  --contexts     Comma-separated list of kubectl contexts to remove"
+                echo "  --help, -h     Show this help message"
+                echo ""
+                exit 1
+                ;;
+        esac
+    done
+
+    # Export parsed values to be used by main logic
+    FORCE_CLEANUP="$force_cleanup_var"
+    KUBECTL_CONTEXTS="$kubectl_contexts_var"
+}
+
 main() {
-    local force_cleanup="$1"
-    local kubectl_contexts="$2"
+    # Parse parameters if provided (handles both sourced and direct execution)
+    if [[ $# -gt 0 ]]; then
+        _parse_parameters "$@"
+    fi
 
     _cleanup_banner
 
     # Skip confirmation if --force flag is provided
-    if [[ "$force_cleanup" != "true" ]]; then
+    if [[ "$FORCE_CLEANUP" != "true" ]]; then
         _confirm_cleanup
     fi
 
     log_info "Starting cleanup process..."
 
     _cleanup_processes
-    _cleanup_kubectl_config "$kubectl_contexts"
+    _cleanup_kubectl_config "$KUBECTL_CONTEXTS"
     _cleanup_k3s
     _cleanup_luks_container
     _cleanup_tools
@@ -414,71 +487,8 @@ main() {
     fi
 }
 
-# Parse command line arguments
-force_cleanup=false
-kubectl_contexts=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --force)
-            force_cleanup=true
-            shift
-            ;;
-        --contexts=*)
-            kubectl_contexts="${1#*=}"
-            shift
-            ;;
-        --help|-h)
-        echo "Enterprise Homelab Cleanup Script"
-        echo
-        echo "Usage:"
-        echo "  $0 [OPTIONS]"
-        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- [--force]"
-        echo
-        echo "Options:"
-        echo "  --force        Skip confirmation prompt"
-        echo "  --skip-phase0  Preserve tools and directories (only remove k3s)"
-        echo "  --contexts     Comma-separated list of kubectl contexts to remove"
-        echo "  --help         Show this help message"
-        echo
-        echo "Examples:"
-        echo "  # Interactive cleanup with confirmation"
-        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash"
-        echo
-        echo "  # Force cleanup without confirmation"
-        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force"
-        echo
-        echo "  # Quick cleanup preserving Phase 0 state"
-        echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- --force --skip-phase0"
-        echo
-        echo "This script can remove bootstrap components in two modes:"
-        echo
-        echo "Full cleanup (default):"
-        echo "  • k3s cluster and all Kubernetes resources"
-        echo "  • All installed tools (kubectl, terraform, helm, flux, yq, vault)"
-        echo "  • All bootstrap directories and temporary files"
-        echo "  • All running port-forwards and background processes"
-        echo
-        echo "Phase 0 preservation (--skip-phase0):"
-        echo "  • k3s cluster and all Kubernetes resources"
-        echo "  • kubectl config contexts for k3s"
-        echo "  • All running port-forwards and k3s processes"
-        echo "  • Tools and bootstrap directories are preserved"
-        exit 0
-        ;;
-    *)
-        echo "Error: Unknown parameter: $1"
-        echo ""
-        echo "Usage: $0 [OPTIONS]"
-        echo "  --force        Skip confirmation prompt"
-        echo "  --contexts     Comma-separated list of kubectl contexts to remove"
-        echo "  --help, -h     Show this help message"
-        echo ""
-        exit 1
-        ;;
-    esac
-    shift
-done
-
-# Run main cleanup with parsed parameters
-main "$force_cleanup" "$kubectl_contexts"
+# Only run main when executed directly (not sourced via smart_import)
+# Handles: direct execution, curl piping, but NOT sourcing via smart_import
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
+    main "$@"
+fi

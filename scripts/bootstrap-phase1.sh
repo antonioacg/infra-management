@@ -670,6 +670,11 @@ _print_success_message() {
 }
 
 main() {
+    # Parse parameters if provided (handles both sourced and direct execution)
+    if [[ $# -gt 0 ]]; then
+        _parse_parameters "$@"
+    fi
+
     # Set up comprehensive error handling
     trap '_cleanup_on_error $LINENO' ERR
     trap 'log_warning "[Phase 1] Script interrupted by user"; exit 130' INT TERM
@@ -719,6 +724,5 @@ main() {
 # Only run main when executed directly (not sourced via smart_import)
 # Handles: direct execution, curl piping, but NOT sourcing via smart_import
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
-    _parse_parameters "$@"
     main "$@"
 fi

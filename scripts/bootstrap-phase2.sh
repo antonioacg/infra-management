@@ -349,6 +349,11 @@ _print_success_message() {
 
 # Main function
 main() {
+    # Parse parameters if provided (handles both sourced and direct execution)
+    if [[ $# -gt 0 ]]; then
+        _parse_parameters "$@"
+    fi
+
     # Set up cleanup trap
     trap _cleanup_on_exit EXIT
 
@@ -397,6 +402,5 @@ main() {
 # Only run main when executed directly (not sourced via smart_import)
 # Handles: direct execution, curl piping, but NOT sourcing via smart_import
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
-    _parse_parameters "$@"
     main "$@"
 fi

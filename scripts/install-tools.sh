@@ -255,10 +255,48 @@ _install_yq() {
     fi
 }
 
+# PRIVATE: Parse command-line parameters
+_parse_parameters() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --validate)
+                _validate_tools
+                exit 0
+                ;;
+            --help|-h)
+                echo "Enterprise Platform Tool Installation"
+                echo ""
+                echo "Usage: $0 [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --validate    Show current tool status and system information"
+                echo "  --help, -h    Show this help message"
+                echo ""
+                echo "Environment Variables:"
+                echo "  LOG_LEVEL             Set logging level (ERROR|WARN|INFO|DEBUG|TRACE)"
+                echo "  USE_LOCAL_IMPORTS     Use local filesystem instead of remote imports"
+                echo "  DEBUG_IMPORTS         Show import resolution details"
+                echo ""
+                exit 0
+                ;;
+            *)
+                echo "Error: Unknown option: $1"
+                echo ""
+                echo "Usage: $0 [OPTIONS]"
+                echo "  --validate    Show current tool status"
+                echo "  --help, -h    Show this help message"
+                echo ""
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
 # Verify installations
 verify_tools() {
     log_info "Verifying tool installations"
-    
+
     local failed_tools=()
 
     for tool in "${BOOTSTRAP_TOOLS[@]}"; do
@@ -278,7 +316,7 @@ verify_tools() {
             failed_tools+=("$tool")
         fi
     done
-    
+
     if [ ${#failed_tools[@]} -eq 0 ]; then
         log_success "All tools verified successfully"
         return 0
@@ -290,6 +328,11 @@ verify_tools() {
 
 # Main installation function
 main() {
+    # Parse parameters if provided (handles both sourced and direct execution)
+    if [[ $# -gt 0 ]]; then
+        _parse_parameters "$@"
+    fi
+
     print_banner "🔧 Bootstrap Tool Installation" "Installing enterprise platform tools"
 
     # Detect system architecture first (required for downloads)
@@ -308,10 +351,10 @@ main() {
     _install_terraform
     _install_yq
     _install_vault_cli  # Optional
-    
+
     echo ""
     verify_tools
-    
+
     echo ""
     log_success "Tool installation completed!"
     echo ""
@@ -406,41 +449,5 @@ _validate_tools() {
 # Run main function if script is executed directly (not sourced via smart_import)
 # Handles: direct execution, curl piping, but NOT sourcing via smart_import
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ "${BASH_SOURCE[0]}" =~ ^/dev/fd/ ]] || [[ -z "${BASH_SOURCE[0]}" ]]; then
-    # Parse command line arguments
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --validate)
-                _validate_tools
-                exit 0
-                ;;
-            --help|-h)
-                echo "Enterprise Platform Tool Installation"
-                echo ""
-                echo "Usage: $0 [OPTIONS]"
-                echo ""
-                echo "Options:"
-                echo "  --validate    Show current tool status and system information"
-                echo "  --help, -h    Show this help message"
-                echo ""
-                echo "Environment Variables:"
-                echo "  LOG_LEVEL             Set logging level (ERROR|WARN|INFO|DEBUG|TRACE)"
-                echo "  USE_LOCAL_IMPORTS     Use local filesystem instead of remote imports"
-                echo "  DEBUG_IMPORTS         Show import resolution details"
-                echo ""
-                exit 0
-                ;;
-            *)
-                echo "Error: Unknown option: $1"
-                echo ""
-                echo "Usage: $0 [OPTIONS]"
-                echo "  --validate    Show current tool status"
-                echo "  --help, -h    Show this help message"
-                echo ""
-                exit 1
-                ;;
-        esac
-        shift
-    done
-
-    main
+    main "$@"
 fi
