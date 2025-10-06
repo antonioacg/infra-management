@@ -64,11 +64,6 @@ resource "helm_release" "bootstrap_minio" {
         purge  = false
       }
     ]
-    makeBucketJob = {
-      securityContext = {
-        enabled = true
-      }
-    }
     persistence = {
       enabled      = true
       size         = var.minio_storage_size
