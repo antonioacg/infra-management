@@ -6,8 +6,8 @@ set -euo pipefail
 # Usage: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase2.sh | bash -s -- --nodes=1 --tier=small --environment=production [--skip-validation]
 
 # PHASE 2 SUBPHASES:
-#   2a. Bootstrap State Migration (LOCAL → remote MinIO)
-#   2b. Infrastructure Repository Setup (remote modules)
+#   2a. Prerequisites & Validation (verify Phase 1 dependencies)
+#   2b. Bootstrap State Migration (LOCAL → remote MinIO)
 #   2c. Infrastructure Deployment (Vault + External Secrets + Networking)
 #   2d. Validation & Cleanup
 
@@ -155,7 +155,7 @@ _validate_phase2_prerequisites() {
 
 # PRIVATE: Set up bootstrap working directory and migrate state
 _migrate_bootstrap_state() {
-    log_info "[Phase 2a] Setting up bootstrap state migration..."
+    log_info "[Phase 2b] Setting up bootstrap state migration..."
 
     # Set up working directory
     if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
@@ -168,31 +168,31 @@ _migrate_bootstrap_state() {
 
         # Verify state directory exists
         if [[ ! -d "$BOOTSTRAP_STATE_DIR" ]]; then
-            log_error "[Phase 2a] ❌ Bootstrap state directory not found: $BOOTSTRAP_STATE_DIR"
-            log_error "[Phase 2a] Phase 1 must run before Phase 2"
+            log_error "[Phase 2b] ❌ Bootstrap state directory not found: $BOOTSTRAP_STATE_DIR"
+            log_error "[Phase 2b] Phase 1 must run before Phase 2"
             exit 1
         fi
 
         if [[ ! -f "$BOOTSTRAP_STATE_DIR/terraform.tfstate" ]]; then
-            log_error "[Phase 2a] ❌ terraform.tfstate not found in $BOOTSTRAP_STATE_DIR"
+            log_error "[Phase 2b] ❌ terraform.tfstate not found in $BOOTSTRAP_STATE_DIR"
             exit 1
         fi
 
-        log_success "[Phase 2a] ✅ Using Phase 1 state: $BOOTSTRAP_STATE_DIR"
+        log_success "[Phase 2b] ✅ Using Phase 1 state: $BOOTSTRAP_STATE_DIR"
     fi
 
     cd "$BOOTSTRAP_STATE_DIR"
 
     # Only migrate if we have local state (not already migrated)
     if [[ -f "terraform.tfstate" && -s "terraform.tfstate" ]]; then
-        log_info "[Phase 2a] Found local state, performing migration..."
+        log_info "[Phase 2b] Found local state, performing migration..."
 
         # Backup local state and backend config
         cp terraform.tfstate "terraform.tfstate.backup.$(date +%Y%m%d_%H%M%S)"
         cp backend.tf "backend.tf.backup.$(date +%Y%m%d_%H%M%S)"
 
         # Update backend.tf to use S3 backend for migration
-        log_info "[Phase 2a] Updating backend configuration to S3..."
+        log_info "[Phase 2b] Updating backend configuration to S3..."
         cat > backend.tf <<'EOF'
 # Bootstrap State Backend Configuration
 # Migrated to remote S3 backend (MinIO)
@@ -206,14 +206,14 @@ terraform {
 EOF
 
         # Port-forward to MinIO for migration
-        log_info "[Phase 2a] Starting port-forward to MinIO..."
+        log_info "[Phase 2b] Starting port-forward to MinIO..."
         kubectl port-forward -n bootstrap svc/bootstrap-minio 9000:9000 &>/dev/null &
         MINIO_PF_PID=$!
         sleep 5
 
         # Test connectivity
         if ! curl -s "http://localhost:9000/minio/health/ready" &>/dev/null; then
-            log_error "[Phase 2a] ❌ Cannot connect to MinIO for migration"
+            log_error "[Phase 2b] ❌ Cannot connect to MinIO for migration"
             exit 1
         fi
 
@@ -222,19 +222,19 @@ EOF
         export AWS_SECRET_ACCESS_KEY="$TF_VAR_minio_root_password"
 
         # TESTING: Log full credentials for debugging
-        log_info "[Phase 2a] TESTING - Full credentials:"
-        log_info "[Phase 2a]   TF_VAR_minio_root_user=$TF_VAR_minio_root_user"
-        log_info "[Phase 2a]   TF_VAR_minio_root_password=$TF_VAR_minio_root_password"
-        log_info "[Phase 2a]   AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
-        log_info "[Phase 2a]   AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+        log_info "[Phase 2b] TESTING - Full credentials:"
+        log_info "[Phase 2b]   TF_VAR_minio_root_user=$TF_VAR_minio_root_user"
+        log_info "[Phase 2b]   TF_VAR_minio_root_password=$TF_VAR_minio_root_password"
+        log_info "[Phase 2b]   AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+        log_info "[Phase 2b]   AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
 
         if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
-            log_error "[Phase 2a] ❌ Credentials missing!"
+            log_error "[Phase 2b] ❌ Credentials missing!"
             exit 1
         fi
 
         # Migrate state using backend-config file + runtime overrides
-        log_info "[Phase 2a] Migrating state to remote backend..."
+        log_info "[Phase 2b] Migrating state to remote backend..."
         terraform init -migrate-state \
             -backend-config=backend-remote.hcl \
             -backend-config="key=${ENVIRONMENT}/bootstrap/terraform.tfstate" \
@@ -243,20 +243,20 @@ EOF
 
         # Verify migration
         if terraform state list &>/dev/null; then
-            log_success "[Phase 2a] ✅ State migration completed successfully"
+            log_success "[Phase 2b] ✅ State migration completed successfully"
         else
-            log_error "[Phase 2a] ❌ State migration verification failed"
+            log_error "[Phase 2b] ❌ State migration verification failed"
             exit 1
         fi
     else
-        log_info "[Phase 2a] No local state found, initializing with remote backend..."
+        log_info "[Phase 2b] No local state found, initializing with remote backend..."
         terraform init -backend-config=backend-remote.hcl
     fi
 }
 
 # PRIVATE: Set up infrastructure workspace with remote modules
 _setup_infrastructure_workspace() {
-    log_info "[Phase 2b] Setting up infrastructure workspace..."
+    log_info "[Phase 2c] Setting up infrastructure workspace..."
 
     # Create infrastructure working directory
     INFRA_DIR="/tmp/phase2-infra-$$"
@@ -264,18 +264,18 @@ _setup_infrastructure_workspace() {
     cd "$INFRA_DIR"
 
     # Initialize with remote infrastructure modules
-    log_info "[Phase 2b] Initializing infrastructure modules..."
+    log_info "[Phase 2c] Initializing infrastructure modules..."
     terraform init -from-module="github.com/${GITHUB_ORG}/infra//environments/${ENVIRONMENT}?ref=${GIT_REF}"
 
     # Set up backend credentials via environment variables
-    log_info "[Phase 2b] Configuring backend credentials..."
+    log_info "[Phase 2c] Configuring backend credentials..."
     export AWS_ACCESS_KEY_ID="$TF_VAR_minio_root_user"
     export AWS_SECRET_ACCESS_KEY="$TF_VAR_minio_root_password"
 
     # Initialize with infrastructure backend (uses existing backend.tf)
     terraform init -backend-config="key=${ENVIRONMENT}/infra/terraform.tfstate"
 
-    log_success "[Phase 2b] ✅ Infrastructure workspace ready"
+    log_success "[Phase 2c] ✅ Infrastructure workspace ready"
 }
 
 # PRIVATE: Deploy infrastructure components
@@ -375,26 +375,26 @@ main() {
 
     print_banner "🚀 Phase 2: State Migration + Infrastructure" "Remote-first enterprise deployment" "Environment: $ENVIRONMENT, Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
 
-    log_phase "🚀 Phase 2a: Prerequisites & State Migration"
+    log_phase "🚀 Phase 2a: Prerequisites & Validation"
     _validate_phase2_prerequisites
-    _migrate_bootstrap_state
 
     if [[ "$STOP_AFTER" == "2a" ]]; then
         log_success "✅ Stopped after Phase 2a as requested"
+        log_info "Prerequisites validated. Phase 1 dependencies confirmed."
+        return 0
+    fi
+
+    log_phase "🚀 Phase 2b: Bootstrap State Migration"
+    _migrate_bootstrap_state
+
+    if [[ "$STOP_AFTER" == "2b" ]]; then
+        log_success "✅ Stopped after Phase 2b as requested"
         log_info "State migration completed. Credentials preserved in memory."
         return 0
     fi
 
-    log_phase "🚀 Phase 2b: Infrastructure Workspace Setup"
-    _setup_infrastructure_workspace
-
-    if [[ "$STOP_AFTER" == "2b" ]]; then
-        log_success "✅ Stopped after Phase 2b as requested"
-        log_info "Infrastructure workspace ready. Credentials preserved in memory."
-        return 0
-    fi
-
     log_phase "🚀 Phase 2c: Infrastructure Deployment"
+    _setup_infrastructure_workspace
     _deploy_infrastructure
 
     if [[ "$STOP_AFTER" == "2c" ]]; then
