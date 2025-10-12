@@ -291,45 +291,49 @@ _setup_kubectl_config() {
     local context_name="$1"
     log_info "[Phase 1b] Setting up kubectl context: $context_name"
 
+    # Create ~/.kube directory with secure permissions (700 - owner only)
     mkdir -p ~/.kube
+    chmod 700 ~/.kube
 
     if [[ -f ~/.kube/config ]]; then
         log_debug "[Phase 1b] Existing kubeconfig found, merging with k3s config"
 
-        # Copy k3s config to temp file
-        sudo cp /etc/rancher/k3s/k3s.yaml /tmp/k3s-temp.yaml
-        sudo chown $USER:$USER /tmp/k3s-temp.yaml
-
-        # Use yq to rename cluster, user, and context cleanly
+        # Define renamed components
         local cluster_name="${context_name}-cluster"
         local user_name="${context_name}-user"
 
         log_debug "[Phase 1b] Renaming k3s config components to: context=$context_name, cluster=$cluster_name, user=$user_name"
 
-        # Rename using yq (much cleaner than sed)
-        yq eval '.contexts[0].name = "'$context_name'"' -i /tmp/k3s-temp.yaml
-        yq eval '.contexts[0].context.cluster = "'$cluster_name'"' -i /tmp/k3s-temp.yaml
-        yq eval '.contexts[0].context.user = "'$user_name'"' -i /tmp/k3s-temp.yaml
-        yq eval '.clusters[0].name = "'$cluster_name'"' -i /tmp/k3s-temp.yaml
-        yq eval '.users[0].name = "'$user_name'"' -i /tmp/k3s-temp.yaml
-        yq eval '.current-context = "'$context_name'"' -i /tmp/k3s-temp.yaml
+        # Transform k3s config in memory using process substitution
+        # This avoids any temp files on disk
+        # Note: sudo required because k3s.yaml has 600 permissions (root-only, secure by default)
+        local transformed_config=$(sudo cat /etc/rancher/k3s/k3s.yaml | \
+            yq eval '.contexts[0].name = "'$context_name'"' | \
+            yq eval '.contexts[0].context.cluster = "'$cluster_name'"' | \
+            yq eval '.contexts[0].context.user = "'$user_name'"' | \
+            yq eval '.clusters[0].name = "'$cluster_name'"' | \
+            yq eval '.users[0].name = "'$user_name'"' | \
+            yq eval '.current-context = "'$context_name'"')
 
-        # Validate the updated config
-        kubectl config view --kubeconfig=/tmp/k3s-temp.yaml >/dev/null || {
-            log_error "[Phase 1b] Failed to update k3s config with yq"
-            rm -f /tmp/k3s-temp.yaml
+        # Validate the transformed config before merging
+        echo "$transformed_config" | kubectl config view --kubeconfig=/dev/stdin >/dev/null || {
+            log_error "[Phase 1b] Failed to transform k3s config with yq"
             exit 1
         }
 
-        # Merge with existing config
-        KUBECONFIG=~/.kube/config:/tmp/k3s-temp.yaml kubectl config view --flatten > ~/.kube/config.tmp || {
+        # Merge configs entirely in memory using process substitution
+        # No temp files created at any point
+        KUBECONFIG=~/.kube/config:<(echo "$transformed_config") kubectl config view --flatten > ~/.kube/config.new || {
             log_error "[Phase 1b] Failed to merge kubectl configurations"
-            rm -f /tmp/k3s-temp.yaml ~/.kube/config.tmp
+            rm -f ~/.kube/config.new
             exit 1
         }
 
-        mv ~/.kube/config.tmp ~/.kube/config
-        rm -f /tmp/k3s-temp.yaml
+        # Set secure permissions before moving into place
+        chmod 600 ~/.kube/config.new
+
+        # Atomic move to replace config
+        mv ~/.kube/config.new ~/.kube/config
 
         # Set the new context as current
         kubectl config use-context "$context_name" || {
@@ -341,17 +345,123 @@ _setup_kubectl_config() {
     else
         log_debug "[Phase 1b] No existing kubeconfig, creating new one from k3s config"
 
-        # No existing config, copy k3s config directly
-        sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-        sudo chown $USER:$USER ~/.kube/config
+        # No existing config, copy k3s config directly with secure permissions
+        # Note: sudo required because k3s.yaml has 600 permissions (root-only, secure by default)
+        sudo cat /etc/rancher/k3s/k3s.yaml > ~/.kube/config
+        chmod 600 ~/.kube/config
 
         # For direct copy, the context remains "default"
         context_name="default"
         log_success "[Phase 1b] ✅ Created kubectl config with k3s cluster"
     fi
 
+    # Verify final permissions are secure (600 - owner read/write only)
+    local final_perms=$(stat -c '%a' ~/.kube/config 2>/dev/null || stat -f '%A' ~/.kube/config 2>/dev/null)
+    if [[ "$final_perms" == "600" ]]; then
+        log_debug "[Phase 1b] kubeconfig permissions verified: $final_perms (secure)"
+    else
+        log_warning "[Phase 1b] kubeconfig permissions: $final_perms (expected: 600)"
+        chmod 600 ~/.kube/config
+        log_info "[Phase 1b] Fixed kubeconfig permissions to 600"
+    fi
+
     # Validate that kubectl is working
     _validate_kubectl_context "$context_name"
+}
+
+# PRIVATE: Generate etcd encryption configuration for k3s
+_generate_etcd_encryption_config() {
+    log_phase "Security" "Generating etcd encryption-at-rest configuration"
+
+    local encryption_config_dir="/var/lib/rancher/k3s/server/cred"
+    local encryption_config_file="${encryption_config_dir}/encryption-config.json"
+
+    # Check if encryption config already exists
+    if [[ -f "$encryption_config_file" ]]; then
+        log_info "[Phase 1b] etcd encryption configuration already exists, verifying permissions..."
+
+        # Check current permissions
+        local current_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
+        log_debug "[Phase 1b] Current permissions: $current_perms"
+
+        # Ensure correct permissions (600) and ownership (root:root)
+        sudo chmod 600 "$encryption_config_file"
+        sudo chown root:root "$encryption_config_file"
+
+        # Verify permissions were set correctly
+        local new_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
+        if [[ "$new_perms" == "600" ]]; then
+            log_success "[Phase 1b] ✅ etcd encryption configuration exists with correct permissions"
+        else
+            log_warning "[Phase 1b] ⚠️  Permissions: $new_perms (expected: 600)"
+        fi
+
+        return 0
+    fi
+
+    # Create directory if it doesn't exist
+    log_info "[Phase 1b] Creating encryption configuration directory..."
+    sudo mkdir -p "$encryption_config_dir"
+
+    # Generate random encryption key (32 bytes = 256 bits, base64 encoded)
+    log_info "[Phase 1b] Generating encryption key..."
+    local encryption_key=$(openssl rand -base64 32)
+
+    # Create EncryptionConfiguration
+    log_info "[Phase 1b] Writing encryption configuration..."
+    sudo tee "$encryption_config_file" >/dev/null <<EOF
+{
+  "kind": "EncryptionConfiguration",
+  "apiVersion": "apiserver.config.k8s.io/v1",
+  "resources": [
+    {
+      "resources": [
+        "secrets"
+      ],
+      "providers": [
+        {
+          "aescbc": {
+            "keys": [
+              {
+                "name": "key1",
+                "secret": "${encryption_key}"
+              }
+            ]
+          }
+        },
+        {
+          "identity": {}
+        }
+      ]
+    }
+  ]
+}
+EOF
+
+    # Set proper permissions (only root can read)
+    log_info "[Phase 1b] Setting file permissions to 600 (root only)..."
+    sudo chmod 600 "$encryption_config_file"
+    sudo chown root:root "$encryption_config_file"
+
+    # Verify file was created successfully and permissions are correct
+    if [[ -f "$encryption_config_file" ]]; then
+        local final_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
+
+        if [[ "$final_perms" == "600" ]]; then
+            log_success "[Phase 1b] ✅ etcd encryption configuration generated with correct permissions"
+            log_info "[Phase 1b] Configuration file: $encryption_config_file"
+            log_debug "[Phase 1b] Permissions verified: $final_perms (root:root)"
+        else
+            log_error "[Phase 1b] ❌ Permissions incorrect: $final_perms (expected: 600)"
+            exit 1
+        fi
+    else
+        log_error "[Phase 1b] ❌ Failed to create encryption configuration"
+        exit 1
+    fi
+
+    # Clear encryption key from memory
+    unset encryption_key
 }
 
 # PRIVATE: Install and configure k3s cluster
@@ -387,6 +497,9 @@ _install_k3s() {
     else
         log_info "[Phase 1b] Installing k3s with resource tier: $RESOURCE_TIER"
 
+        # Generate etcd encryption configuration BEFORE k3s installation
+        _generate_etcd_encryption_config
+
         # Configure k3s based on resource tier and node count
         local k3s_args=""
         if [[ "$RESOURCE_TIER" == "medium" ]] || [[ "$RESOURCE_TIER" == "large" ]] || [[ "$NODE_COUNT" -gt 1 ]]; then
@@ -398,14 +511,19 @@ _install_k3s() {
             log_info "[Phase 1b] Configuring for single node"
         fi
 
-        # Install k3s with robust download and retry logic
+        # Install k3s with encryption and robust download
+        local encryption_config="/var/lib/rancher/k3s/server/cred/encryption-config.json"
+        log_info "[Phase 1b] Installing k3s with etcd encryption enabled..."
         curl_with_retry "https://get.k3s.io" | sh -s - server \
             $k3s_args \
             --disable traefik \
             --disable servicelb \
-            --write-kubeconfig-mode 644
+            --write-kubeconfig-mode 600 \
+            --secrets-encryption \
+            --kube-apiserver-arg="encryption-provider-config=${encryption_config}"
 
-        log_info "[Phase 1b] k3s installation completed"
+        log_info "[Phase 1b] k3s installation completed with etcd encryption"
+        log_debug "[Phase 1b] k3s kubeconfig created with secure 600 permissions (root-only)"
     fi
 
     # Always ensure kubectl context is properly configured
@@ -461,6 +579,10 @@ _validate_cluster() {
     log_info "[Phase 1b] Waiting for DNS pods to be ready..."
     kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=120s
 
+    # Verify etcd encryption is enabled
+    log_info "[Phase 1b] Verifying etcd encryption-at-rest..."
+    _verify_etcd_encryption
+
     # Show cluster info
     local node_count=$(kubectl get nodes --no-headers | wc -l)
     local cluster_version=$(kubectl version --short --client 2>/dev/null | grep 'Client Version' | cut -d' ' -f3 || echo "unknown")
@@ -469,6 +591,72 @@ _validate_cluster() {
     log_info "[Phase 1b]   • Nodes: $node_count"
     log_info "[Phase 1b]   • Version: $cluster_version"
     log_info "[Phase 1b]   • Storage: local-path available"
+    log_info "[Phase 1b]   • Encryption: etcd secrets encrypted at rest"
+}
+
+# PRIVATE: Verify etcd encryption-at-rest is working
+_verify_etcd_encryption() {
+    local encryption_config="/var/lib/rancher/k3s/server/cred/encryption-config.json"
+
+    # Check encryption config file exists
+    if [[ ! -f "$encryption_config" ]]; then
+        log_error "[Phase 1b] ❌ Encryption configuration not found: $encryption_config"
+        exit 1
+    fi
+
+    # Verify file permissions are secure (600)
+    local perms=$(stat -c '%a' "$encryption_config" 2>/dev/null || stat -f '%A' "$encryption_config" 2>/dev/null)
+    if [[ "$perms" != "600" ]]; then
+        log_warning "[Phase 1b] ⚠️  Encryption config permissions: $perms (expected: 600)"
+    fi
+
+    # Create a test secret with known plaintext value
+    local test_value="PLAINTEXT_TEST_VALUE_$(date +%s)"
+    log_debug "[Phase 1b] Creating test secret to verify encryption..."
+    kubectl create secret generic etcd-encryption-test \
+        --from-literal=test-key="$test_value" \
+        -n kube-system >/dev/null 2>&1 || {
+        log_error "[Phase 1b] ❌ Failed to create test secret"
+        exit 1
+    }
+
+    # Verify secret was created
+    if ! kubectl get secret etcd-encryption-test -n kube-system >/dev/null 2>&1; then
+        log_error "[Phase 1b] ❌ Failed to verify test secret creation"
+        exit 1
+    fi
+
+    log_success "[Phase 1b] ✅ Test secret created successfully"
+
+    # Inspect etcd database on disk to verify encryption
+    # k3s uses etcd embedded, data stored in /var/lib/rancher/k3s/server/db/
+    log_debug "[Phase 1b] Inspecting etcd database to verify encryption on disk..."
+    local etcd_db_path="/var/lib/rancher/k3s/server/db"
+
+    if [[ -d "$etcd_db_path" ]]; then
+        # Search for the plaintext value in etcd database files
+        # If encryption is working, the plaintext should NOT be found
+        if sudo grep -r "$test_value" "$etcd_db_path" >/dev/null 2>&1; then
+            log_error "[Phase 1b] ❌ ENCRYPTION FAILED: Plaintext found in etcd database!"
+            log_error "[Phase 1b] Secret data is NOT encrypted at rest"
+
+            # Clean up test secret
+            kubectl delete secret etcd-encryption-test -n kube-system >/dev/null 2>&1
+            exit 1
+        else
+            log_success "[Phase 1b] ✅ Encryption verified: Plaintext NOT found in etcd database"
+            log_debug "[Phase 1b] Secret data is properly encrypted at rest"
+        fi
+    else
+        log_warning "[Phase 1b] ⚠️  Could not find etcd database path: $etcd_db_path"
+        log_warning "[Phase 1b] Skipping filesystem-level encryption verification"
+    fi
+
+    # Clean up test secret
+    kubectl delete secret etcd-encryption-test -n kube-system >/dev/null 2>&1
+    log_debug "[Phase 1b] Test secret cleaned up"
+
+    log_debug "[Phase 1b] Encryption configuration: $encryption_config (600 permissions)"
 }
 
 # PRIVATE: Prepare Terraform workspace for bootstrap storage deployment

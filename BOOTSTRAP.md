@@ -196,7 +196,12 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 ### Required Access
 - **GitHub Token:** Personal access token with `repo` and `workflow` scopes
   - Get token at: https://github.com/settings/tokens
-- **sudo Access:** Required for tool installation and k3s setup
+- **sudo Access:** Required for:
+  - Tool installation (kubectl, terraform, helm)
+  - k3s cluster installation and service management
+  - LUKS container encryption setup (Linux only)
+  - etcd encryption configuration (root-owned files with 600 permissions)
+  - Reading k3s kubeconfig (created with 600 permissions for security)
 
 ---
 
