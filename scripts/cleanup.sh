@@ -189,6 +189,20 @@ _cleanup_luks_container() {
         log_success "LUKS container file removed"
     fi
 
+    # Remove LUKS key file
+    if [[ -f /root/.luks-k3s.key ]]; then
+        log_info "Removing LUKS key file..."
+        sudo rm -f /root/.luks-k3s.key
+        log_success "LUKS key file removed"
+    fi
+
+    # Remove crypttab entry for LUKS container
+    if grep -q "k3s_encrypted" /etc/crypttab 2>/dev/null; then
+        log_info "Removing LUKS auto-unlock from crypttab..."
+        sudo sed -i.bak '/k3s_encrypted/d' /etc/crypttab
+        log_success "crypttab entry removed"
+    fi
+
     # Remove fstab entry for LUKS container
     if grep -q "k3s_encrypted" /etc/fstab 2>/dev/null; then
         log_info "Removing LUKS mount from fstab..."

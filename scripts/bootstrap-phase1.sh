@@ -193,9 +193,12 @@ _setup_node_encryption() {
         fi
     fi
 
-    # Generate encryption passphrase
-    log_info "[Phase 1a] Generating encryption passphrase..."
-    local luks_passphrase=$(openssl rand -base64 32)
+    # Generate encryption key and store in protected key file
+    log_info "[Phase 1a] Generating encryption key..."
+    local key_file="/root/.luks-k3s.key"
+    sudo dd if=/dev/urandom of="$key_file" bs=512 count=1 status=none
+    sudo chmod 400 "$key_file"
+    sudo chown root:root "$key_file"
 
     # Set container size based on resource tier
     local container_size
@@ -213,13 +216,13 @@ _setup_node_encryption() {
     sudo mkdir -p /var/lib
     sudo dd if=/dev/zero of="$container_file" bs=1M count=1 seek=$((${container_size%G} * 1024 - 1)) status=none
 
-    # Format as LUKS container
-    log_info "[Phase 1a] Formatting LUKS container..."
-    echo "${luks_passphrase}" | sudo cryptsetup luksFormat "$container_file" --batch-mode --cipher aes-xts-plain64 --key-size 512 --hash sha512
+    # Format as LUKS container with key file
+    log_info "[Phase 1a] Formatting LUKS container with key file..."
+    sudo cryptsetup luksFormat "$container_file" "$key_file" --batch-mode --cipher aes-xts-plain64 --key-size 512 --hash sha512
 
-    # Open LUKS container
+    # Open LUKS container with key file
     log_info "[Phase 1a] Opening LUKS container..."
-    echo "${luks_passphrase}" | sudo cryptsetup luksOpen "$container_file" k3s_encrypted
+    sudo cryptsetup luksOpen "$container_file" k3s_encrypted --key-file="$key_file"
 
     # Create filesystem in container
     log_info "[Phase 1a] Creating filesystem in encrypted container..."
@@ -233,17 +236,26 @@ _setup_node_encryption() {
     sudo chown root:root /var/lib/rancher/k3s
     sudo chmod 755 /var/lib/rancher/k3s
 
-    # Add to fstab for persistence (container will need manual unlock after reboot)
+    # Create crypttab entry for automatic unlock on boot
+    if ! grep -q "k3s_encrypted" /etc/crypttab; then
+        log_info "[Phase 1a] Configuring automatic unlock on boot..."
+        echo "k3s_encrypted $container_file $key_file luks" | sudo tee -a /etc/crypttab >/dev/null
+        log_success "[Phase 1a] ✅ Automatic unlock configured in /etc/crypttab"
+    fi
+
+    # Add to fstab for automatic mount after unlock
     if ! grep -q "k3s_encrypted" /etc/fstab; then
         log_info "[Phase 1a] Adding encrypted mount to fstab..."
-        echo "/dev/mapper/k3s_encrypted /var/lib/rancher/k3s ext4 defaults,noauto 0 2" | sudo tee -a /etc/fstab >/dev/null
-        log_warning "[Phase 1a] ⚠️  LUKS container requires manual unlock after reboot"
-        log_info "[Phase 1a] Unlock command: cryptsetup luksOpen $container_file k3s_encrypted"
+        echo "/dev/mapper/k3s_encrypted /var/lib/rancher/k3s ext4 defaults 0 2" | sudo tee -a /etc/fstab >/dev/null
+        log_success "[Phase 1a] ✅ Automatic mount configured in /etc/fstab"
     fi
 
     # Verify encryption is working
     if mount | grep -q "/dev/mapper/k3s_encrypted.*rancher/k3s"; then
-        log_success "[Phase 1a] ✅ LUKS container encryption configured - all k3s data will be encrypted at rest"
+        log_success "[Phase 1a] ✅ LUKS container encryption configured with automatic unlock"
+        log_info "[Phase 1a]   • Key file: $key_file (400 permissions, root-only)"
+        log_info "[Phase 1a]   • Auto-unlock: Configured in /etc/crypttab"
+        log_info "[Phase 1a]   • Auto-mount: Configured in /etc/fstab"
 
         # Test write/read to verify container
         echo "encryption-test" | sudo tee /var/lib/rancher/k3s/test-file >/dev/null
@@ -258,9 +270,6 @@ _setup_node_encryption() {
         log_error "[Phase 1a] ❌ Failed to mount LUKS container"
         exit 1
     fi
-
-    # Clear the passphrase from memory for security
-    unset luks_passphrase
 }
 
 # PRIVATE: Validate kubectl context is not conflicting with existing k3s installations
