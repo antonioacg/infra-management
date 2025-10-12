@@ -17,7 +17,7 @@ smart_import "infra-management/scripts/lib/network.sh"
 log_debug "Install tools script starting with LOG_LEVEL=$LOG_LEVEL"
 
 # Definitive tool list - all tools we install/manage
-BOOTSTRAP_TOOLS=("kubectl" "terraform" "helm" "flux" "yq" "vault" "mc")
+BOOTSTRAP_TOOLS=("kubectl" "terraform" "helm" "flux" "yq" "mc")
 
 # Function to check if a command exists
 # PRIVATE: Check if a command exists in PATH
@@ -207,30 +207,6 @@ _install_terraform() {
     log_success "Terraform ${TERRAFORM_VERSION} installed"
 }
 
-# PRIVATE: Install Vault CLI (optional, for debugging)
-_install_vault_cli() {
-    if _command_exists vault; then
-        log_success "Vault CLI already installed ($(vault version 2>/dev/null | head -1 || echo 'version unknown'))"
-        return 0
-    fi
-    
-    log_info "Installing Vault CLI"
-
-    local VAULT_VERSION="${VAULT_VERSION:-1.15.2}"
-
-    # Download and install Vault CLI
-    local VAULT_ZIP="vault_${VAULT_VERSION}_${DETECTED_OS}_${DETECTED_ARCH}.zip"
-    local VAULT_URL="https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
-
-    if curl_with_retry "$VAULT_URL" "$VAULT_ZIP"; then
-        _extract_and_install_binary "$VAULT_ZIP" "vault"
-    else
-        return 1
-    fi
-    
-    log_success "Vault CLI ${VAULT_VERSION} installed"
-}
-
 # PRIVATE: Install MinIO Client (mc)
 _install_mc() {
     if _command_exists mc; then
@@ -334,7 +310,6 @@ verify_tools() {
                 kubectl) version=$(kubectl version --client --short 2>/dev/null | cut -d' ' -f3 || echo "unknown") ;;
                 flux) version=$(flux version --client 2>/dev/null | grep 'flux version' | cut -d' ' -f3 || echo "unknown") ;;
                 terraform) version=$(terraform version -json 2>/dev/null | jq -r .terraform_version || echo "unknown") ;;
-                vault) version=$(vault version 2>/dev/null | head -1 | cut -d' ' -f2 || echo "unknown") ;;
                 yq) version=$(yq --version 2>/dev/null | cut -d' ' -f4 || echo "unknown") ;;
                 mc) version=$(mc --version 2>/dev/null | head -1 || echo "unknown") ;;
                 *) version=$(${tool} --version 2>/dev/null | head -1 || echo "unknown") ;;
@@ -379,7 +354,6 @@ main() {
     _install_flux
     _install_terraform
     _install_yq
-    _install_vault_cli  # Optional
     _install_mc  # MinIO Client for S3 connectivity testing
 
     echo ""
@@ -392,7 +366,7 @@ main() {
     log_info "  • kubectl - Kubernetes CLI"
     log_info "  • flux - GitOps CLI"
     log_info "  • terraform - Infrastructure as code"
-    log_info "  • vault - Secret management CLI (optional)"
+    log_info "  • mc - MinIO Client for S3 connectivity"
     echo ""
 }
 
@@ -423,7 +397,7 @@ _validate_tools() {
         "flux:flux version --client 2>/dev/null | grep 'flux version' || echo 'not installed'"
         "helm:helm version --short 2>/dev/null || echo 'not installed'"
         "terraform:terraform version -json 2>/dev/null | jq -r .terraform_version || echo 'not installed'"
-        "vault:vault version 2>/dev/null | head -1 || echo 'not installed'"
+        "mc:mc --version 2>/dev/null | head -1 || echo 'not installed'"
     )
 
     for tool_info in "${tools[@]}"; do
