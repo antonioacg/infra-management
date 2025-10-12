@@ -40,6 +40,9 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 
 **What It Does:**
 - k3s cluster deployment with tier-based resource allocation
+- Data-at-rest encryption (two-layer: etcd + LUKS)
+  - etcd encryption for all Kubernetes secrets (all platforms)
+  - LUKS container encryption for node storage (Linux only)
 - MinIO S3-compatible storage (for future Terraform remote state)
 - PostgreSQL database (for future state locking)
 - Bootstrap namespace creation
@@ -52,10 +55,13 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 - Local state allows bootstrap without dependencies
 - Temporary directory isolates bootstrap state
 - Credentials generated in-memory only (no files)
+- Two-layer encryption protects secrets before Vault deployment
 - Tier-based scaling (small/medium/large) for enterprise readiness
 
 **Success Criteria:**
 - k3s cluster running and accessible via kubectl
+- etcd encryption-at-rest enabled for all Kubernetes secrets
+- LUKS container encryption active (Linux only)
 - MinIO and PostgreSQL pods running in bootstrap namespace
 - Credentials generated and preserved in memory for Phase 2
 
@@ -68,7 +74,7 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 **What It Does:**
 - Migrate Phase 1 state from LOCAL to REMOTE (MinIO S3 backend)
 - Configure PostgreSQL state locking
-- Deploy Vault with OpenCryptoki auto-unseal
+- Deploy Vault with Shamir + K8s Secret automated unsealing
 - Deploy External Secrets Operator with ClusterSecretStore configuration
 
 **State Management:**
@@ -77,14 +83,14 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 - PostgreSQL provides state locking for concurrent operation safety
 
 **Key Design Decisions:**
-- OpenCryptoki provides enterprise-grade auto-unseal without cloud dependencies
+- Shamir + K8s Secret provides automated unsealing without Enterprise license or cloud dependencies
 - External Secrets enables GitOps secret management
 - No ingress/networking (deferred to Phase 4)
 - kubectl port-forward used for bootstrap access
 
 **Success Criteria:**
 - Phase 1 state successfully migrated to MinIO
-- Vault pods running and auto-unsealed
+- Vault pods running and automatically unsealed on pod restart
 - External Secrets Operator connecting to Vault
 - ClusterSecretStore authentication successful
 - State locking prevents concurrent operations
@@ -242,7 +248,8 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 
 **Phase 2:**
 - Phase 1 credentials used for state migration
-- Vault HSM PIN generated for OpenCryptoki
+- Vault unseal keys and root token generated during initialization
+- Root token used for bootstrap, then revoked
 - All credentials cleared from memory after successful deployment
 
 **Phase 3+:**
@@ -315,8 +322,9 @@ kubectl port-forward -n bootstrap svc/bootstrap-minio 9001:9001
 - Validate credentials are preserved from Phase 1
 
 **Vault unsealing fails:**
-- Check OpenCryptoki daemon logs
-- Verify HSM PIN configuration
+- Check init container logs: `kubectl logs -n vault vault-0 -c vault-init`
+- Verify `vault-init` K8s Secret exists and is accessible
+- Check `vault-unseal` service account RBAC permissions
 - Review Vault pod logs for initialization errors
 
 ### Recovery Procedures
