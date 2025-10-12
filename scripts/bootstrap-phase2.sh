@@ -315,12 +315,32 @@ _deploy_infrastructure() {
 _validate_infrastructure_deployment() {
     log_info "[Phase 2d] Validating infrastructure deployment..."
 
-    # Wait for Vault
+    # Wait for Bank-Vaults operator
+    log_info "[Phase 2d] Waiting for Bank-Vaults operator to be ready..."
+    if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=vault-operator -n vault-operator --timeout=180s; then
+        log_success "[Phase 2d] ✅ Bank-Vaults operator is ready"
+    else
+        log_error "[Phase 2d] ❌ Bank-Vaults operator failed to become ready"
+        exit 1
+    fi
+
+    # Wait for Vault (managed by Bank-Vaults operator)
     log_info "[Phase 2d] Waiting for Vault to be ready..."
-    if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=vault -n vault --timeout=300s; then
+    if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=vault -n vault --timeout=600s; then
         log_success "[Phase 2d] ✅ Vault is ready"
     else
         log_error "[Phase 2d] ❌ Vault failed to become ready"
+        log_info "[Phase 2d] Check Bank-Vaults operator logs: kubectl logs -n vault-operator -l app.kubernetes.io/name=vault-operator"
+        exit 1
+    fi
+
+    # Verify Vault unseal keys secret created by Bank-Vaults
+    log_info "[Phase 2d] Verifying Vault unseal keys secret..."
+    if kubectl get secret vault-unseal-keys -n vault >/dev/null 2>&1; then
+        log_success "[Phase 2d] ✅ Vault unseal keys secret exists"
+    else
+        log_error "[Phase 2d] ❌ Vault unseal keys secret not found"
+        log_info "[Phase 2d] Bank-Vaults should automatically create this during Vault initialization"
         exit 1
     fi
 
@@ -352,12 +372,13 @@ _print_success_message() {
     log_info ""
     log_info "📋 What was deployed:"
     log_info "  • Bootstrap state migrated to remote MinIO backend"
-    log_info "  • Vault: Secret management and storage"
+    log_info "  • Bank-Vaults Operator: Production-ready Vault lifecycle management"
+    log_info "  • Vault: Secret management (auto-initialized and unsealed)"
     log_info "  • External Secrets: Kubernetes secret synchronization"
     log_info "  • Nginx Ingress: Load balancing and SSL termination"
     log_info ""
     log_info "🔄 Next steps:"
-    log_info "  • Phase 3: Vault initialization and security policies"
+    log_info "  • Phase 3: Advanced Vault policies and security configuration"
     log_info "  • Phase 4: GitOps activation with Flux"
     log_info ""
     log_info "🔍 Verify deployment:"
