@@ -21,7 +21,7 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 
 **What It Does:**
 - System architecture detection (x86_64/ARM64, Linux/macOS)
-- Tool installation: kubectl, terraform, helm, flux
+- Tool installation: kubectl, terraform, helm, flux, yq, mc
 - Environment validation (sudo access, network connectivity)
 - GitHub token validation
 
