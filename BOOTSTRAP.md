@@ -74,7 +74,7 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 **What It Does:**
 - Migrate Phase 1 state from LOCAL to REMOTE (MinIO S3 backend)
 - Configure PostgreSQL state locking
-- Deploy Vault with Shamir + K8s Secret automated unsealing
+- Deploy Vault with Bank-Vaults operator (automated initialization and unsealing)
 - Deploy External Secrets Operator with ClusterSecretStore configuration
 
 **State Management:**
@@ -83,7 +83,7 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 - PostgreSQL provides state locking for concurrent operation safety
 
 **Key Design Decisions:**
-- Shamir + K8s Secret provides automated unsealing without Enterprise license or cloud dependencies
+- Bank-Vaults operator provides production-ready automated unsealing without Enterprise license or cloud dependencies (see `bank-vaults-design.md`)
 - External Secrets enables GitOps secret management
 - No ingress/networking (deferred to Phase 4)
 - kubectl port-forward used for bootstrap access
@@ -327,10 +327,11 @@ kubectl port-forward -n bootstrap svc/bootstrap-minio 9001:9001
 - Validate credentials are preserved from Phase 1
 
 **Vault unsealing fails:**
-- Check init container logs: `kubectl logs -n vault vault-0 -c vault-init`
-- Verify `vault-init` K8s Secret exists and is accessible
-- Check `vault-unseal` service account RBAC permissions
-- Review Vault pod logs for initialization errors
+- Check Bank-Vaults configurer sidecar logs: `kubectl logs -n vault vault-0 -c bank-vaults`
+- Verify `vault-unseal-keys` K8s Secret exists: `kubectl get secret -n vault vault-unseal-keys`
+- Check Bank-Vaults operator logs: `kubectl logs -n vault-operator -l app.kubernetes.io/name=vault-operator`
+- Review Vault pod logs for initialization errors: `kubectl logs -n vault vault-0 -c vault`
+- See break-glass recovery in `bank-vaults-design.md`
 
 ### Recovery Procedures
 
