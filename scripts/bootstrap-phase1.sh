@@ -808,11 +808,28 @@ _verify_bootstrap_foundation() {
     log_info "[Phase 1c] Waiting for PostgreSQL to be ready..."
     kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=bootstrap-postgresql -n bootstrap --timeout=180s
 
-    # Test MinIO connectivity (basic check)
+    # Test MinIO connectivity using local mc client (installed in Phase 0)
     log_info "[Phase 1c] Testing MinIO S3 connectivity..."
-    kubectl exec -n bootstrap deployment/bootstrap-minio -- mc alias set test http://localhost:9000 admin minio123 2>/dev/null || {
-        log_warning "[Phase 1c] MinIO connectivity test skipped (mc not available in container)"
-    }
+
+    # Port-forward to MinIO service for local testing
+    kubectl port-forward -n bootstrap svc/bootstrap-minio 9000:9000 >/dev/null 2>&1 &
+    local pf_pid=$!
+    sleep 2  # Wait for port-forward to establish
+
+    # Test connectivity with local mc client
+    if command -v mc >/dev/null 2>&1; then
+        if mc alias set phase1-test http://localhost:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" >/dev/null 2>&1; then
+            log_success "[Phase 1c] ✅ MinIO S3 connectivity verified"
+            mc alias remove phase1-test >/dev/null 2>&1
+        else
+            log_warning "[Phase 1c] ⚠️  MinIO connectivity test failed (may still be initializing)"
+        fi
+    else
+        log_warning "[Phase 1c] ⚠️  MinIO Client (mc) not found - install with Phase 0"
+    fi
+
+    # Cleanup port-forward
+    kill $pf_pid 2>/dev/null || true
 
     # Verify terraform_locks database (CloudNativePG creates it via initdb bootstrap)
     log_info "[Phase 1c] Verifying terraform_locks database..."

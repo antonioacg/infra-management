@@ -17,7 +17,7 @@ smart_import "infra-management/scripts/lib/network.sh"
 log_debug "Install tools script starting with LOG_LEVEL=$LOG_LEVEL"
 
 # Definitive tool list - all tools we install/manage
-BOOTSTRAP_TOOLS=("kubectl" "terraform" "helm" "flux" "yq" "vault")
+BOOTSTRAP_TOOLS=("kubectl" "terraform" "helm" "flux" "yq" "vault" "mc")
 
 # Function to check if a command exists
 # PRIVATE: Check if a command exists in PATH
@@ -231,6 +231,34 @@ _install_vault_cli() {
     log_success "Vault CLI ${VAULT_VERSION} installed"
 }
 
+# PRIVATE: Install MinIO Client (mc)
+_install_mc() {
+    if _command_exists mc; then
+        log_success "MinIO Client (mc) already installed ($(mc --version 2>/dev/null || echo 'version unknown'))"
+        return 0
+    fi
+
+    log_info "Installing MinIO Client (mc)"
+
+    # MinIO Client binary URL
+    local MC_URL="https://dl.min.io/client/mc/release/${DETECTED_OS}-${DETECTED_ARCH}/mc"
+
+    if curl_with_retry "$MC_URL" "mc"; then
+        chmod +x mc
+        if sudo mv mc /usr/local/bin/; then
+            log_success "MinIO Client (mc) successfully installed to /usr/local/bin/"
+        else
+            log_error "Failed to move mc to /usr/local/bin/"
+            return 1
+        fi
+    else
+        log_error "Failed to download MinIO Client after retry attempts"
+        return 1
+    fi
+
+    log_success "MinIO Client (mc) installed"
+}
+
 # PRIVATE: Install yq (YAML processor)
 _install_yq() {
     if _command_exists yq; then
@@ -308,6 +336,7 @@ verify_tools() {
                 terraform) version=$(terraform version -json 2>/dev/null | jq -r .terraform_version || echo "unknown") ;;
                 vault) version=$(vault version 2>/dev/null | head -1 | cut -d' ' -f2 || echo "unknown") ;;
                 yq) version=$(yq --version 2>/dev/null | cut -d' ' -f4 || echo "unknown") ;;
+                mc) version=$(mc --version 2>/dev/null | head -1 || echo "unknown") ;;
                 *) version=$(${tool} --version 2>/dev/null | head -1 || echo "unknown") ;;
             esac
             log_success "$tool installed (${version})"
@@ -351,6 +380,7 @@ main() {
     _install_terraform
     _install_yq
     _install_vault_cli  # Optional
+    _install_mc  # MinIO Client for S3 connectivity testing
 
     echo ""
     verify_tools
