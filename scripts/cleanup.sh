@@ -2,7 +2,7 @@
 # Don't use set -e as cleanup operations may have expected failures
 # We handle errors explicitly with proper logging
 
-# Enterprise Homelab Cleanup Script
+# Bootstrap Cleanup Script
 # Completely removes all bootstrap components and tools for fresh start
 # Usage: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- [--force]
 
@@ -20,7 +20,7 @@ log_debug "Cleanup script starting with LOG_LEVEL=$LOG_LEVEL"
 
 # PRIVATE: Print cleanup banner
 _cleanup_banner() {
-    print_banner "🧹 Enterprise Homelab Cleanup" "⚠️  DESTRUCTIVE OPERATION"
+    print_banner "🧹 Bootstrap Cleanup" "⚠️  DESTRUCTIVE OPERATION"
 }
 
 # PRIVATE: Confirm cleanup operation
@@ -29,7 +29,7 @@ _confirm_cleanup() {
     log_warning "This will completely remove:"
     echo "  • k3s cluster and all data"
     echo "  • All installed tools (kubectl, terraform, helm, flux, yq, mc)"
-    echo "  • All bootstrap directories (~/homelab-bootstrap, ~/test-bootstrap)"
+    echo "  • All bootstrap state directories"
     echo "  • All running port-forwards and processes"
     echo
     read -p "Are you sure you want to proceed? (yes/no): " -r
@@ -279,9 +279,8 @@ _cleanup_directories() {
     log_info "Removing bootstrap directories..."
 
     local directories=(
-        "$HOME/homelab-bootstrap"
-        "$HOME/test-bootstrap"
-        "/tmp/homelab-*"
+        "/tmp/bootstrap-state"
+        "/tmp/phase1-terraform-*"
     )
 
     local removed_count=0
@@ -374,7 +373,7 @@ verify_cleanup() {
     done
 
     # Check directories
-    local directories=("$HOME/homelab-bootstrap" "$HOME/test-bootstrap")
+    local directories=("/tmp/bootstrap-state")
     for dir in "${directories[@]}"; do
         if [[ -d "$dir" ]]; then
             issues+=("$dir still exists")
@@ -416,7 +415,7 @@ _parse_parameters() {
                 shift
                 ;;
             --help|-h)
-                echo "Enterprise Homelab Cleanup Script"
+                echo "Bootstrap Cleanup Script"
                 echo
                 echo "Usage:"
                 echo "  $0 [OPTIONS]"
