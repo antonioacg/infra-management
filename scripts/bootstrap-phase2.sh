@@ -258,22 +258,67 @@ EOF
 _setup_infrastructure_workspace() {
     log_info "[Phase 2c] Setting up infrastructure workspace..."
 
-    # Create infrastructure working directory
-    INFRA_DIR="/tmp/phase2-infra-$$"
-    mkdir -p "$INFRA_DIR"
-    cd "$INFRA_DIR"
+    # Infrastructure working directory (under bootstrap temp dir)
+    INFRA_DIR="${BOOTSTRAP_TEMP_DIR}/infra"
 
-    # Initialize with remote infrastructure modules
-    log_info "[Phase 2c] Initializing infrastructure modules..."
-    terraform init -from-module="github.com/${GITHUB_ORG}/infra//environments/${ENVIRONMENT}?ref=${GIT_REF}"
+    # Clone infrastructure repository if not already a git repo
+    if [[ -d "$INFRA_DIR/.git" ]]; then
+        log_info "[Phase 2c] Using existing infrastructure repository..."
+        cd "$INFRA_DIR" || exit 1
+    else
+        # Remove any non-git directory that might exist
+        if [[ -d "$INFRA_DIR" ]]; then
+            log_warning "[Phase 2c] Removing non-git directory at $INFRA_DIR"
+            rm -rf "$INFRA_DIR"
+        fi
+
+        log_info "[Phase 2c] Cloning infrastructure repository..."
+        if ! git clone "https://github.com/${GITHUB_ORG}/infra.git" "$INFRA_DIR"; then
+            log_error "[Phase 2c] ❌ Failed to clone infrastructure repository"
+            log_info "[Phase 2c] Repository: https://github.com/${GITHUB_ORG}/infra.git"
+            exit 1
+        fi
+        cd "$INFRA_DIR" || exit 1
+    fi
+
+    # Checkout specific ref (branch or commit SHA)
+    log_info "[Phase 2c] Checking out ref: ${GIT_REF}..."
+    if ! git fetch origin "${GIT_REF}" 2>/dev/null; then
+        log_debug "[Phase 2c] Could not fetch ref ${GIT_REF}, trying direct checkout..."
+    fi
+
+    if ! git checkout "${GIT_REF}"; then
+        log_error "[Phase 2c] ❌ Failed to checkout ref: ${GIT_REF}"
+        log_info "[Phase 2c] Available branches: $(git branch -r | head -5)"
+        exit 1
+    fi
+
+    # Verify environment directory exists
+    if [[ ! -d "environments/${ENVIRONMENT}" ]]; then
+        log_error "[Phase 2c] ❌ Environment directory not found: environments/${ENVIRONMENT}"
+        log_info "[Phase 2c] Available environments: $(ls -1 environments 2>/dev/null | tr '\n' ' ')"
+        exit 1
+    fi
+
+    # Navigate to environment directory
+    cd "environments/${ENVIRONMENT}" || {
+        log_error "[Phase 2c] ❌ Failed to navigate to environment directory"
+        exit 1
+    }
 
     # Set up backend credentials via environment variables
     log_info "[Phase 2c] Configuring backend credentials..."
     export AWS_ACCESS_KEY_ID="$TF_VAR_minio_root_user"
     export AWS_SECRET_ACCESS_KEY="$TF_VAR_minio_root_password"
 
-    # Initialize with infrastructure backend (uses existing backend.tf)
-    terraform init -backend-config="key=${ENVIRONMENT}/infra/terraform.tfstate"
+    # Initialize with infrastructure backend
+    log_info "[Phase 2c] Initializing Terraform with remote backend..."
+    if ! terraform init -backend-config="key=${ENVIRONMENT}/infra/terraform.tfstate"; then
+        log_error "[Phase 2c] ❌ Terraform initialization failed"
+        log_info "[Phase 2c] Check MinIO port-forward: kubectl get svc -n bootstrap bootstrap-minio"
+        log_info "[Phase 2c] Check backend.tf configuration in $(pwd)"
+        exit 1
+    fi
 
     log_success "[Phase 2c] ✅ Infrastructure workspace ready"
 }
