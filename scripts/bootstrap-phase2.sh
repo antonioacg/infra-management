@@ -336,7 +336,8 @@ _deploy_infrastructure() {
     }
 
     # Set environment variables for Terraform
-    export TF_VAR_environment="$ENVIRONMENT"
+    # Note: environment value comes from terraform.tfvars in the selected directory
+    # The $ENVIRONMENT variable only controls which directory we use (environments/production, etc)
     export TF_VAR_vault_storage_access_key="$TF_VAR_minio_root_user"
     export TF_VAR_vault_storage_secret_key="$TF_VAR_minio_root_password"
     export TF_VAR_github_org="$GITHUB_ORG"
