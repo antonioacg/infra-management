@@ -327,8 +327,13 @@ _setup_infrastructure_workspace() {
 _deploy_infrastructure() {
     log_info "[Phase 2c] Deploying infrastructure components..."
 
-    # Ensure we're in infrastructure directory
-    cd "$INFRA_DIR"
+    # Ensure we're in environment directory (set by _setup_infrastructure_workspace)
+    cd "$INFRA_DIR/environments/${ENVIRONMENT}" || {
+        log_error "[Phase 2c] ❌ Failed to navigate to environment directory"
+        log_info "[Phase 2c] INFRA_DIR: $INFRA_DIR"
+        log_info "[Phase 2c] ENVIRONMENT: $ENVIRONMENT"
+        exit 1
+    }
 
     # Set environment variables for Terraform
     export TF_VAR_environment="$ENVIRONMENT"
@@ -345,15 +350,57 @@ _deploy_infrastructure() {
         sleep 5
     fi
 
-    # Plan and apply infrastructure
-    log_info "[Phase 2c] Planning infrastructure deployment..."
-    terraform plan -out=tfplan
+    # Retry terraform apply to handle transient network errors (helm chart downloads)
+    local max_attempts=3
+    local attempt=1
+    local apply_success=false
 
-    log_info "[Phase 2c] Applying infrastructure deployment..."
-    terraform apply tfplan
-    rm -f tfplan
+    while [[ $attempt -le $max_attempts ]]; do
+        local plan_file="tfplan-attempt${attempt}"
 
-    log_success "[Phase 2c] ✅ Infrastructure deployment completed"
+        if [[ $attempt -gt 1 ]]; then
+            log_warning "[Phase 2c] Retry attempt $attempt/$max_attempts after previous failure..."
+            sleep 5
+        fi
+
+        log_info "[Phase 2c] Creating plan: $plan_file"
+        if ! terraform plan -out="$plan_file"; then
+            log_error "[Phase 2c] Terraform plan failed on attempt $attempt"
+            rm -f "$plan_file"
+            if [[ $attempt -eq $max_attempts ]]; then
+                log_error "[Phase 2c] ❌ Terraform plan failed after $max_attempts attempts"
+                log_info "[Phase 2c] Current directory: $(pwd)"
+                log_info "[Phase 2c] Files: $(ls -la *.tf 2>/dev/null || echo 'No .tf files found')"
+                return 1
+            fi
+            ((attempt++))
+            continue
+        fi
+
+        log_info "[Phase 2c] Applying plan: $plan_file (attempt $attempt/$max_attempts)"
+        if terraform apply "$plan_file"; then
+            apply_success=true
+            # Clean up plan files after successful apply
+            rm -f tfplan-attempt*
+            break
+        else
+            log_warning "[Phase 2c] Terraform apply failed on attempt $attempt"
+            if [[ $attempt -eq $max_attempts ]]; then
+                log_error "[Phase 2c] ❌ Terraform apply failed after $max_attempts attempts"
+                rm -f tfplan-attempt*
+                return 1
+            fi
+            ((attempt++))
+        fi
+    done
+
+    if [[ "$apply_success" == "true" ]]; then
+        log_success "[Phase 2c] ✅ Infrastructure deployment completed"
+        return 0
+    else
+        log_error "[Phase 2c] ❌ Infrastructure deployment failed"
+        return 1
+    fi
 }
 
 # PRIVATE: Wait for infrastructure services to be ready
