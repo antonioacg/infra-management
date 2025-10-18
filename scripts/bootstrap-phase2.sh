@@ -324,8 +324,96 @@ _setup_infrastructure_workspace() {
 }
 
 # PRIVATE: Deploy infrastructure components
+# PRIVATE: Phase 2c Step 1 - Deploy Operators
+_deploy_operators() {
+    log_info "[Phase 2c - Step 1] Deploying operators (Helm releases)..."
+
+    # Targeted apply for operator Helm releases only
+    log_info "[Phase 2c - Step 1] Deploying Bank-Vaults operator, External Secrets operator..."
+
+    if ! terraform apply -auto-approve \
+        -target=module.vault.kubernetes_namespace.vault \
+        -target=module.vault.kubernetes_namespace.vault_operator \
+        -target=module.vault.helm_release.vault_operator \
+        -target=module.external_secrets; then
+        log_error "[Phase 2c - Step 1] ❌ Failed to deploy operators"
+        return 1
+    fi
+
+    log_success "[Phase 2c - Step 1] ✅ Operators deployed successfully"
+    return 0
+}
+
+# PRIVATE: Phase 2c Step 2 - Wait for CRDs
+_wait_for_crds() {
+    log_info "[Phase 2c - Step 2] Waiting for CRDs to be registered..."
+
+    # Wait for Bank-Vaults CRD
+    log_info "[Phase 2c - Step 2] Waiting for Vault CRD (vault.banzaicloud.com)..."
+    if ! kubectl wait --for condition=established --timeout=180s \
+        crd/vaults.vault.banzaicloud.com 2>/dev/null; then
+
+        # CRD might not exist yet, wait for operator to create it
+        log_info "[Phase 2c - Step 2] CRD not found, waiting for operator to install it..."
+        local max_wait=60
+        local elapsed=0
+        while [[ $elapsed -lt $max_wait ]]; do
+            if kubectl get crd vaults.vault.banzaicloud.com &>/dev/null; then
+                log_info "[Phase 2c - Step 2] Vault CRD detected, waiting for established condition..."
+                kubectl wait --for condition=established --timeout=60s \
+                    crd/vaults.vault.banzaicloud.com
+                break
+            fi
+            sleep 5
+            ((elapsed += 5))
+            log_debug "[Phase 2c - Step 2] Still waiting for CRD... (${elapsed}s/${max_wait}s)"
+        done
+
+        if [[ $elapsed -ge $max_wait ]]; then
+            log_error "[Phase 2c - Step 2] ❌ Vault CRD not registered after ${max_wait}s"
+            log_info "[Phase 2c - Step 2] Check operator logs: kubectl logs -n vault-operator -l app.kubernetes.io/name=vault-operator"
+            return 1
+        fi
+    fi
+
+    log_success "[Phase 2c - Step 2] ✅ CRDs registered and ready"
+    return 0
+}
+
+# PRIVATE: Phase 2c Step 3 - Deploy Custom Resources
+_deploy_custom_resources() {
+    log_info "[Phase 2c - Step 3] Deploying custom resources..."
+
+    # Full terraform apply (CRDs now available for validation)
+    local max_attempts=3
+    local attempt=1
+
+    while [[ $attempt -le $max_attempts ]]; do
+        if [[ $attempt -gt 1 ]]; then
+            log_warning "[Phase 2c - Step 3] Retry attempt $attempt/$max_attempts..."
+            sleep 5
+        fi
+
+        log_info "[Phase 2c - Step 3] Applying remaining infrastructure (attempt $attempt/$max_attempts)..."
+        if terraform apply -auto-approve; then
+            log_success "[Phase 2c - Step 3] ✅ Custom resources deployed successfully"
+            return 0
+        else
+            log_warning "[Phase 2c - Step 3] Terraform apply failed on attempt $attempt"
+            if [[ $attempt -eq $max_attempts ]]; then
+                log_error "[Phase 2c - Step 3] ❌ Failed after $max_attempts attempts"
+                return 1
+            fi
+            ((attempt++))
+        fi
+    done
+
+    return 1
+}
+
+# PRIVATE: Phase 2c - Infrastructure Deployment (orchestrates 3 steps)
 _deploy_infrastructure() {
-    log_info "[Phase 2c] Deploying infrastructure components..."
+    log_info "[Phase 2c] Deploying infrastructure in 3 steps..."
 
     # Ensure we're in environment directory (set by _setup_infrastructure_workspace)
     cd "$INFRA_DIR/environments/${ENVIRONMENT}" || {
@@ -342,6 +430,8 @@ _deploy_infrastructure() {
     export TF_VAR_vault_storage_secret_key="$TF_VAR_minio_root_password"
     export TF_VAR_github_org="$GITHUB_ORG"
     export TF_VAR_git_ref="$GIT_REF"
+    export TF_VAR_node_count="$NODE_COUNT"
+    export TF_VAR_resource_tier="$RESOURCE_TIER"
 
     # Ensure MinIO port-forward is still active
     if [[ -z "$MINIO_PF_PID" ]] || ! kill -0 "$MINIO_PF_PID" 2>/dev/null; then
@@ -351,57 +441,26 @@ _deploy_infrastructure() {
         sleep 5
     fi
 
-    # Retry terraform apply to handle transient network errors (helm chart downloads)
-    local max_attempts=3
-    local attempt=1
-    local apply_success=false
-
-    while [[ $attempt -le $max_attempts ]]; do
-        local plan_file="tfplan-attempt${attempt}"
-
-        if [[ $attempt -gt 1 ]]; then
-            log_warning "[Phase 2c] Retry attempt $attempt/$max_attempts after previous failure..."
-            sleep 5
-        fi
-
-        log_info "[Phase 2c] Creating plan: $plan_file"
-        if ! terraform plan -out="$plan_file"; then
-            log_error "[Phase 2c] Terraform plan failed on attempt $attempt"
-            rm -f "$plan_file"
-            if [[ $attempt -eq $max_attempts ]]; then
-                log_error "[Phase 2c] ❌ Terraform plan failed after $max_attempts attempts"
-                log_info "[Phase 2c] Current directory: $(pwd)"
-                log_info "[Phase 2c] Files: $(ls -la *.tf 2>/dev/null || echo 'No .tf files found')"
-                return 1
-            fi
-            ((attempt++))
-            continue
-        fi
-
-        log_info "[Phase 2c] Applying plan: $plan_file (attempt $attempt/$max_attempts)"
-        if terraform apply "$plan_file"; then
-            apply_success=true
-            # Clean up plan files after successful apply
-            rm -f tfplan-attempt*
-            break
-        else
-            log_warning "[Phase 2c] Terraform apply failed on attempt $attempt"
-            if [[ $attempt -eq $max_attempts ]]; then
-                log_error "[Phase 2c] ❌ Terraform apply failed after $max_attempts attempts"
-                rm -f tfplan-attempt*
-                return 1
-            fi
-            ((attempt++))
-        fi
-    done
-
-    if [[ "$apply_success" == "true" ]]; then
-        log_success "[Phase 2c] ✅ Infrastructure deployment completed"
-        return 0
-    else
-        log_error "[Phase 2c] ❌ Infrastructure deployment failed"
+    # Step 1: Deploy Operators
+    if ! _deploy_operators; then
+        log_error "[Phase 2c] ❌ Step 1 failed"
         return 1
     fi
+
+    # Step 2: Wait for CRDs
+    if ! _wait_for_crds; then
+        log_error "[Phase 2c] ❌ Step 2 failed"
+        return 1
+    fi
+
+    # Step 3: Deploy Custom Resources
+    if ! _deploy_custom_resources; then
+        log_error "[Phase 2c] ❌ Step 3 failed"
+        return 1
+    fi
+
+    log_success "[Phase 2c] ✅ All infrastructure deployment steps completed"
+    return 0
 }
 
 # PRIVATE: Wait for infrastructure services to be ready
