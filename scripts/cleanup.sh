@@ -279,8 +279,7 @@ _cleanup_directories() {
     log_info "Removing bootstrap directories..."
 
     local directories=(
-        "/tmp/bootstrap-state"
-        "/tmp/phase1-terraform-*"
+        "${BOOTSTRAP_TEMP_DIR:-/tmp/bootstrap-state}"
     )
 
     local removed_count=0
@@ -373,7 +372,7 @@ verify_cleanup() {
     done
 
     # Check directories
-    local directories=("/tmp/bootstrap-state")
+    local directories=("${BOOTSTRAP_TEMP_DIR:-/tmp/bootstrap-state}")
     for dir in "${directories[@]}"; do
         if [[ -d "$dir" ]]; then
             issues+=("$dir still exists")

@@ -93,7 +93,7 @@ _cleanup() {
     clear_bootstrap_credentials 2>/dev/null || true
 
     # Clean shared temp directory (idempotent)
-    rm -rf /tmp/bootstrap-state 2>/dev/null || true
+    rm -rf "$BOOTSTRAP_TEMP_DIR" 2>/dev/null || true
 
     # Show appropriate message based on exit code
     if [[ $exit_code -eq 130 ]]; then
@@ -111,7 +111,7 @@ _cleanup() {
         log_info "  2. Check pods: kubectl get pods -A"
         log_info "  3. Check logs: kubectl logs -n bootstrap -l app=minio"
         log_info "  4. Retry Phase 1: curl ... (run this script again)"
-        log_info "  5. Full cleanup: sudo k3s-uninstall.sh && rm -rf /tmp/bootstrap-state"
+        log_info "  5. Full cleanup: sudo k3s-uninstall.sh && rm -rf \$BOOTSTRAP_TEMP_DIR"
         log_info ""
     fi
 }

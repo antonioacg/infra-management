@@ -104,7 +104,7 @@ _cleanup() {
     fi
 
     # Clean shared temp directory (idempotent)
-    rm -rf /tmp/bootstrap-state 2>/dev/null || true
+    rm -rf "$BOOTSTRAP_TEMP_DIR" 2>/dev/null || true
 
     # Show appropriate message based on exit code
     if [[ $exit_code -eq 130 ]]; then
