@@ -177,20 +177,23 @@ Terraform validates `kubernetes_manifest` resources during `terraform plan` by q
 
 ### Phase 3: Advanced Security (Planned)
 
-**Purpose:** Configure advanced Vault features and security policies.
+**Purpose:** Configure additional Vault features and security policies beyond bootstrap.
 
 **What It Does:**
-- Advanced Vault authentication backends (Kubernetes, AppRole, etc.)
-- Vault policy configuration for least-privilege access
-- Certificate management setup
-- Security hardening and compliance configuration
+- Additional Vault authentication backends (AppRole, OIDC, etc.)
+  - Note: Kubernetes auth already configured in Phase 2 via Bank-Vaults
+- Advanced Vault policy configuration for least-privilege application access
+- Certificate management and PKI setup
+- Audit logging configuration
+- Security hardening and compliance controls
 
 **State Management:** REMOTE state in `infra/environments/production/`
 
 **Success Criteria:**
-- Vault policies configured for application access
-- Authentication backends operational
+- Advanced Vault policies configured for application access patterns
+- Additional authentication backends operational
 - Certificate management ready for TLS
+- Audit logging configured and validated
 
 ---
 
@@ -331,13 +334,17 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 **Phase 1:**
 - All credentials generated in-memory using OpenSSL
 - No credential files created on disk
-- Credentials preserved in memory for Phase 2 (from Phase 1)
+- Credentials preserved in memory for Phase 2 migration
 
 **Phase 2:**
-- Phase 1 credentials used for state migration
-- Vault unseal keys and root token generated during initialization
-- Root token used for bootstrap, then revoked
-- All credentials cleared from memory after successful deployment
+- Phase 1 credentials used for state migration to MinIO
+- Bank-Vaults operator automatically handles Vault initialization:
+  - Generates unseal keys (5 shares, threshold 3)
+  - Stores unseal keys in Kubernetes Secret (`vault-unseal-keys`)
+  - Generates and stores root token in same secret
+  - Automatically unseals Vault on startup
+- Root token available for advanced configuration (Phase 3)
+- Phase 1 credentials cleared from memory after successful deployment
 
 **Phase 3+:**
 - All secrets managed via Vault
@@ -405,8 +412,9 @@ kubectl port-forward -n bootstrap svc/bootstrap-minio 9001:9001
 
 **State migration fails:**
 - Verify MinIO accessibility: `kubectl port-forward -n bootstrap svc/bootstrap-minio 9000:9000`
-- Check Phase 1 temp directory still exists with terraform.tfstate
-- Validate credentials are preserved from Phase 1
+- Check bootstrap temp directory exists: `ls -la /tmp/bootstrap-state/`
+- Verify Phase 1 state file exists: `ls -la /tmp/bootstrap-state/terraform.tfstate`
+- Validate credentials are preserved from Phase 1 (check environment variables)
 
 **Vault unsealing fails:**
 - Check Bank-Vaults configurer sidecar logs: `kubectl logs -n vault vault-0 -c bank-vaults`
