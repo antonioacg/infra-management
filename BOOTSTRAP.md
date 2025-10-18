@@ -48,7 +48,7 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 - Bootstrap namespace creation
 
 **State Management:**
-- LOCAL Terraform state in temporary directory (`/tmp/phase1-terraform-$$`)
+- LOCAL Terraform state in temporary directory (`/tmp/bootstrap-state`)
 - State preserved for migration in Phase 2
 
 **Key Design Decisions:**
@@ -299,7 +299,7 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 ### State Management Strategy
 
 **Phase 1 (Bootstrap Foundation):**
-- Location: `/tmp/phase1-terraform-$$` (temporary)
+- Location: `/tmp/bootstrap-state` (temporary)
 - Backend: LOCAL filesystem
 - Purpose: Foundation only (k3s, MinIO, PostgreSQL)
 
