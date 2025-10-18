@@ -71,24 +71,102 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 
 **Purpose:** Migrate to remote state and deploy core infrastructure services.
 
+**Subphases:**
+
+#### Phase 2a: Prerequisites & Validation
 **What It Does:**
-- Migrate Phase 1 state from LOCAL to REMOTE (MinIO S3 backend)
-- Configure PostgreSQL state locking
-- Deploy Vault with Bank-Vaults operator (automated initialization and unsealing)
-- Deploy External Secrets Operator with ClusterSecretStore configuration
+- Validates Phase 1 dependencies (MinIO and PostgreSQL running)
+- Checks cluster accessibility
+- Verifies bootstrap namespace exists
+
+**Success Criteria:**
+- MinIO service accessible and responding
+- PostgreSQL cluster healthy
+- kubectl can communicate with cluster
+
+#### Phase 2b: Bootstrap State Migration
+**What It Does:**
+- Migrates Phase 1 Terraform state from LOCAL → REMOTE (MinIO S3 backend)
+- Configures PostgreSQL state locking
+- Establishes port-forward to MinIO for state operations
+- Uses Phase 1 credentials preserved in memory
+
+**Success Criteria:**
+- Phase 1 state successfully migrated to MinIO backend
+- State locking configured with PostgreSQL
+- Backend configuration verified
+
+#### Phase 2c: Infrastructure Deployment
+**What It Does:**
+- Clones `infra` repository and checks out specified git ref
+- Deploys core secret management infrastructure in three steps to handle CRD dependencies
+
+**Deployment Steps:**
+
+**Step 1: Deploy Operators**
+- Bank-Vaults operator (Helm chart - installs Vault CRDs)
+- External Secrets operator (Helm chart - installs ESO CRDs)
+- Uses Terraform targeted apply for operator Helm releases only
+
+**Step 2: Wait for CRDs**
+- Waits for Bank-Vaults CRDs to be registered in Kubernetes API
+- Validates CRD availability before proceeding
+- Ensures Terraform can validate custom resource manifests in next step
+
+**Step 3: Deploy Custom Resources**
+- Vault CR (custom resource managed by Bank-Vaults operator)
+- External Secrets ClusterSecretStore and authentication
+- Full Terraform apply for all remaining infrastructure resources
+
+**Why Three Steps?**
+Terraform validates `kubernetes_manifest` resources during `terraform plan` by querying the Kubernetes API server for CRD schemas. If CRDs don't exist yet (because operators haven't been deployed), the plan fails with "no matches for kind". The three-step approach ensures:
+1. Operators are deployed and running
+2. CRDs are registered in the API server
+3. Terraform can successfully validate and deploy custom resources
+
+**Step Validation:**
+- `--stop-after=2c-step1`: Deploy operators only
+- `--stop-after=2c-step2`: Deploy operators + wait for CRDs
+- `--stop-after=2c-step3`: Full deployment (default)
+
+**Success Criteria:**
+- All operator Helm releases deployed successfully
+- CRDs registered and available in Kubernetes API
+- Vault CR created and managed by operator
+- External Secrets resources deployed
+- No Terraform state conflicts
+
+#### Phase 2d: Validation & Cleanup
+**What It Does:**
+- Waits for Bank-Vaults operator pods to be ready
+- Waits for Vault pods to be ready and unsealed
+- Verifies Vault unseal keys secret created by operator
+- Waits for External Secrets pods to be ready
+- Validates ClusterSecretStore authentication to Vault
+- Closes port-forwards and cleans up temporary resources
+
+**Success Criteria:**
+- Vault pods running and automatically unsealed
+- External Secrets Operator connecting to Vault
+- ClusterSecretStore authentication successful
+- All infrastructure services healthy
 
 **State Management:**
-- Phase 1 state migrated to remote MinIO backend
-- All new infrastructure uses REMOTE state in `infra/environments/production/`
-- PostgreSQL provides state locking for concurrent operation safety
+- Phase 1 state: Migrated to remote MinIO backend (Phase 2b)
+- Phase 2 infrastructure: Deployed via `infra/` repository with remote state in MinIO
+- PostgreSQL provides distributed state locking
 
 **Key Design Decisions:**
 - Bank-Vaults operator provides production-ready automated unsealing without Enterprise license or cloud dependencies (see `bank-vaults-design.md`)
-- External Secrets enables GitOps secret management
-- No ingress/networking (deferred to Phase 4)
-- kubectl port-forward used for bootstrap access
+- Three-step deployment handles CRD timing dependencies reliably
+- External Secrets enables GitOps secret management (used in Phase 4)
+- kubectl port-forward used for bootstrap access (no external networking)
+- **Networking/Ingress deferred to Phase 4** (currently deployed due to legacy implementation, will be removed)
 
-**Success Criteria:**
+**Known Issues:**
+- ⚠️ **Nginx Ingress module**: Currently deployed in Phase 2 due to legacy implementation attempts. This will be moved to Phase 4 where networking is actually needed. For now, it's deployed but not used.
+
+**Overall Phase 2 Success Criteria:**
 - Phase 1 state successfully migrated to MinIO
 - Vault pods running and automatically unsealed on pod restart
 - External Secrets Operator connecting to Vault
@@ -116,27 +194,31 @@ curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-mana
 
 ---
 
-### Phase 4: GitOps Applications (Planned)
+### Phase 4: GitOps (Planned)
 
-**Purpose:** Enable GitOps-based application deployment.
+**Purpose:** Enable GitOps-based application deployment mechanism.
 
 **What It Does:**
 - Flux GitOps controller deployment
-- Networking/Ingress deployment (Nginx Ingress Controller)
-- GitOps repository sync configuration
-- Application deployment automation
+- GitOps repository sync configuration (`deployments/` repository)
+- Application deployment automation via Kustomize/Helm
+- Infrastructure changes deployed via git commits
 
 **State Management:** REMOTE state in `infra/environments/production/`
 
 **Key Design Decisions:**
-- Networking deferred to Phase 4 (not needed for bootstrap)
-- GitOps uses External Secrets for credential management
+- GitOps uses External Secrets Operator for credential management
 - Applications deployed via Flux reconciliation
+- Declarative infrastructure via git as single source of truth
+- No manual kubectl apply - everything via git
 
 **Success Criteria:**
 - Flux syncing from git repositories
-- Ingress controller ready for external traffic
-- Applications deployable via GitOps manifests
+- Kustomizations reconciling successfully
+- Applications deployable via git commits to `deployments/` repository
+- External Secrets synchronized to application namespaces
+
+**Note:** Once Phase 4 is complete, all applications (Nginx Ingress, databases, services, jobs, etc.) will be deployed through GitOps, not through bootstrap phases.
 
 ---
 
