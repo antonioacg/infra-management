@@ -14,6 +14,7 @@ set -euo pipefail
 # Configuration - set defaults before imports
 GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
 GIT_REF="${GIT_REF:-main}"
+DEPLOYMENTS_REF="${DEPLOYMENTS_REF:-main}"  # Separate ref for deployments repo
 NODE_COUNT=1
 RESOURCE_TIER="small"
 ENVIRONMENT="production"
@@ -69,6 +70,7 @@ _parse_parameters() {
                 echo "Environment Variables:"
                 echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
                 echo "  GITHUB_TOKEN        GitHub token for Flux git authentication"
+                echo "  DEPLOYMENTS_REF     Git ref for deployments repo (default: main)"
                 echo ""
                 exit 0
                 ;;
@@ -265,13 +267,13 @@ _install_flux_controllers() {
     log_info "[Phase 2c] Installing Flux controllers..."
 
     # Apply Flux components from deployments repository
-    local flux_components_url="https://raw.githubusercontent.com/${GITHUB_ORG}/deployments/${GIT_REF}/clusters/production/flux-system/gotk-components.yaml"
+    local flux_components_url="https://raw.githubusercontent.com/${GITHUB_ORG}/deployments/${DEPLOYMENTS_REF}/clusters/production/flux-system/gotk-components.yaml"
 
     log_debug "[Phase 2c] Fetching Flux components from: $flux_components_url"
 
     if ! kubectl apply -f "$flux_components_url"; then
         log_error "[Phase 2c] Failed to apply Flux components"
-        log_info "[Phase 2c] Check if deployments repo has gotk-components.yaml at ref: ${GIT_REF}"
+        log_info "[Phase 2c] Check if deployments repo has gotk-components.yaml at ref: ${DEPLOYMENTS_REF}"
         exit 1
     fi
 
@@ -327,13 +329,13 @@ _apply_gitops_bootstrap() {
     log_info "[Phase 2c] Applying GitOps bootstrap sync configuration..."
 
     # Apply GitRepository and root Kustomization
-    local gotk_sync_url="https://raw.githubusercontent.com/${GITHUB_ORG}/deployments/${GIT_REF}/clusters/production/flux-system/gotk-sync.yaml"
+    local gotk_sync_url="https://raw.githubusercontent.com/${GITHUB_ORG}/deployments/${DEPLOYMENTS_REF}/clusters/production/flux-system/gotk-sync.yaml"
 
     log_debug "[Phase 2c] Fetching gotk-sync from: $gotk_sync_url"
 
     if ! kubectl apply -f "$gotk_sync_url"; then
         log_error "[Phase 2c] Failed to apply GitOps sync configuration"
-        log_info "[Phase 2c] Check if deployments repo has gotk-sync.yaml at ref: ${GIT_REF}"
+        log_info "[Phase 2c] Check if deployments repo has gotk-sync.yaml at ref: ${DEPLOYMENTS_REF}"
         exit 1
     fi
 
