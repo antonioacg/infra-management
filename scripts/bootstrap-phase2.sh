@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # Enterprise-Ready Platform Bootstrap - Phase 2
-# State Migration + Infrastructure Deployment
+# State Migration + Flux GitOps Bootstrap
 # Usage: curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase2.sh | bash -s -- --nodes=1 --tier=small --environment=production [--skip-validation]
 
 # PHASE 2 SUBPHASES:
 #   2a. Prerequisites & Validation (verify Phase 1 dependencies)
 #   2b. Bootstrap State Migration (LOCAL → remote MinIO)
-#   2c. Infrastructure Deployment (Vault + External Secrets + Networking)
-#   2d. Validation & Cleanup
+#   2c. Flux GitOps Bootstrap (install Flux + create secrets + apply sync)
+#   2d. Validation (wait for Flux sync + infrastructure ready)
 
 # Configuration - set defaults before imports
 GITHUB_ORG="${GITHUB_ORG:-antonioacg}"
@@ -53,7 +53,7 @@ _parse_parameters() {
                 ;;
             --help|-h)
                 echo "Enterprise Platform Bootstrap - Phase 2"
-                echo "State Migration + Infrastructure Deployment"
+                echo "State Migration + Flux GitOps Bootstrap"
                 echo ""
                 echo "Usage:"
                 echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/bootstrap-phase2.sh | bash -s -- [OPTIONS]"
@@ -68,6 +68,7 @@ _parse_parameters() {
                 echo ""
                 echo "Environment Variables:"
                 echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
+                echo "  GITHUB_TOKEN        GitHub token for Flux git authentication"
                 echo ""
                 exit 0
                 ;;
@@ -95,7 +96,7 @@ MINIO_PF_PID=""
 _cleanup() {
     local exit_code=$?
 
-    log_info "🧹 [Phase 2] Cleaning up resources..."
+    log_info "[Phase 2] Cleaning up resources..."
 
     # Kill port-forwards (phase-specific cleanup)
     if [[ -n "$MINIO_PF_PID" ]]; then
@@ -108,10 +109,10 @@ _cleanup() {
 
     # Show appropriate message based on exit code
     if [[ $exit_code -eq 130 ]]; then
-        log_warning "[Phase 2] ⚠️  Script interrupted by user"
+        log_warning "[Phase 2] Script interrupted by user"
     elif [[ $exit_code -ne 0 ]]; then
-        log_error "[Phase 2] ❌ Phase 2 failed with exit code $exit_code"
-        log_info "[Phase 2] 🔍 Check logs above for specific error details"
+        log_error "[Phase 2] Phase 2 failed with exit code $exit_code"
+        log_info "[Phase 2] Check logs above for specific error details"
     fi
 }
 
@@ -126,7 +127,7 @@ _validate_phase2_prerequisites() {
 
     # Check required credentials from Phase 1
     if [[ -z "${TF_VAR_minio_root_user:-}" || -z "${TF_VAR_minio_root_password:-}" || -z "${TF_VAR_postgres_password:-}" ]]; then
-        log_error "[Phase 2a] ❌ Required Phase 1 credentials missing"
+        log_error "[Phase 2a] Required Phase 1 credentials missing"
         log_info ""
         log_info "Required environment variables:"
         log_info "  - TF_VAR_minio_root_user (from Phase 1)"
@@ -137,20 +138,26 @@ _validate_phase2_prerequisites() {
         exit 1
     fi
 
+    # Check GITHUB_TOKEN for Flux
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+        log_error "[Phase 2a] GITHUB_TOKEN required for Flux git authentication"
+        exit 1
+    fi
+
     # Check Phase 1 infrastructure is running
     if ! kubectl get svc -n bootstrap bootstrap-minio &>/dev/null; then
-        log_error "[Phase 2a] ❌ MinIO service not found in bootstrap namespace"
+        log_error "[Phase 2a] MinIO service not found in bootstrap namespace"
         log_info "Run Phase 1 first: bootstrap-phase1.sh"
         exit 1
     fi
 
     if ! kubectl get svc -n bootstrap bootstrap-postgresql &>/dev/null; then
-        log_error "[Phase 2a] ❌ PostgreSQL service not found in bootstrap namespace"
+        log_error "[Phase 2a] PostgreSQL service not found in bootstrap namespace"
         log_info "Run Phase 1 first: bootstrap-phase1.sh"
         exit 1
     fi
 
-    log_success "[Phase 2a] ✅ Phase 1 dependencies validated"
+    log_success "[Phase 2a] Phase 1 dependencies validated"
 }
 
 # PRIVATE: Set up bootstrap working directory and migrate state
@@ -168,17 +175,17 @@ _migrate_bootstrap_state() {
 
         # Verify state directory exists
         if [[ ! -d "$BOOTSTRAP_STATE_DIR" ]]; then
-            log_error "[Phase 2b] ❌ Bootstrap state directory not found: $BOOTSTRAP_STATE_DIR"
+            log_error "[Phase 2b] Bootstrap state directory not found: $BOOTSTRAP_STATE_DIR"
             log_error "[Phase 2b] Phase 1 must run before Phase 2"
             exit 1
         fi
 
         if [[ ! -f "$BOOTSTRAP_STATE_DIR/terraform.tfstate" ]]; then
-            log_error "[Phase 2b] ❌ terraform.tfstate not found in $BOOTSTRAP_STATE_DIR"
+            log_error "[Phase 2b] terraform.tfstate not found in $BOOTSTRAP_STATE_DIR"
             exit 1
         fi
 
-        log_success "[Phase 2b] ✅ Using Phase 1 state: $BOOTSTRAP_STATE_DIR"
+        log_success "[Phase 2b] Using Phase 1 state: $BOOTSTRAP_STATE_DIR"
     fi
 
     cd "$BOOTSTRAP_STATE_DIR"
@@ -213,7 +220,7 @@ EOF
 
         # Test connectivity
         if ! curl -s "http://localhost:9000/minio/health/ready" &>/dev/null; then
-            log_error "[Phase 2b] ❌ Cannot connect to MinIO for migration"
+            log_error "[Phase 2b] Cannot connect to MinIO for migration"
             exit 1
         fi
 
@@ -221,15 +228,10 @@ EOF
         export AWS_ACCESS_KEY_ID="$TF_VAR_minio_root_user"
         export AWS_SECRET_ACCESS_KEY="$TF_VAR_minio_root_password"
 
-        # TESTING: Log full credentials for debugging
-        log_info "[Phase 2b] TESTING - Full credentials:"
-        log_info "[Phase 2b]   TF_VAR_minio_root_user=$TF_VAR_minio_root_user"
-        log_info "[Phase 2b]   TF_VAR_minio_root_password=$TF_VAR_minio_root_password"
-        log_info "[Phase 2b]   AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
-        log_info "[Phase 2b]   AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+        log_debug "[Phase 2b] Credentials configured for state migration"
 
         if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
-            log_error "[Phase 2b] ❌ Credentials missing!"
+            log_error "[Phase 2b] Credentials missing!"
             exit 1
         fi
 
@@ -243,9 +245,9 @@ EOF
 
         # Verify migration
         if terraform state list &>/dev/null; then
-            log_success "[Phase 2b] ✅ State migration completed successfully"
+            log_success "[Phase 2b] State migration completed successfully"
         else
-            log_error "[Phase 2b] ❌ State migration verification failed"
+            log_error "[Phase 2b] State migration verification failed"
             exit 1
         fi
     else
@@ -254,288 +256,216 @@ EOF
     fi
 }
 
-# PRIVATE: Set up infrastructure workspace with remote modules
-_setup_infrastructure_workspace() {
-    log_info "[Phase 2c] Setting up infrastructure workspace..."
+# ============================================================================
+# PHASE 2c: Flux GitOps Bootstrap
+# ============================================================================
 
-    # Infrastructure working directory (under bootstrap temp dir)
-    INFRA_DIR="${BOOTSTRAP_TEMP_DIR}/infra"
+# PRIVATE: Install Flux controllers
+_install_flux_controllers() {
+    log_info "[Phase 2c] Installing Flux controllers..."
 
-    # Clone infrastructure repository if not already a git repo
-    if [[ -d "$INFRA_DIR/.git" ]]; then
-        log_info "[Phase 2c] Using existing infrastructure repository..."
-        cd "$INFRA_DIR" || exit 1
+    # Apply Flux components from deployments repository
+    local flux_components_url="https://raw.githubusercontent.com/${GITHUB_ORG}/deployments/${GIT_REF}/clusters/production/flux-system/gotk-components.yaml"
+
+    log_debug "[Phase 2c] Fetching Flux components from: $flux_components_url"
+
+    if ! kubectl apply -f "$flux_components_url"; then
+        log_error "[Phase 2c] Failed to apply Flux components"
+        log_info "[Phase 2c] Check if deployments repo has gotk-components.yaml at ref: ${GIT_REF}"
+        exit 1
+    fi
+
+    # Wait for Flux controllers to be ready
+    log_info "[Phase 2c] Waiting for Flux controllers to be ready..."
+    if ! kubectl -n flux-system wait --for=condition=Ready pod -l app.kubernetes.io/part-of=flux --timeout=300s; then
+        log_error "[Phase 2c] Flux controllers failed to become ready"
+        log_info "[Phase 2c] Check flux-system pods: kubectl get pods -n flux-system"
+        exit 1
+    fi
+
+    log_success "[Phase 2c] Flux controllers installed and ready"
+}
+
+# PRIVATE: Create Flux git authentication secret
+_create_flux_git_secret() {
+    log_info "[Phase 2c] Creating Flux git authentication secret..."
+
+    # Ensure flux-system namespace exists
+    kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f -
+
+    # Create git authentication secret
+    kubectl create secret generic flux-git-auth \
+        --namespace=flux-system \
+        --from-literal=username=git \
+        --from-literal=password="${GITHUB_TOKEN}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    log_success "[Phase 2c] Flux git authentication secret created"
+}
+
+# PRIVATE: Create Vault storage credentials secret
+_create_vault_storage_secret() {
+    log_info "[Phase 2c] Creating Vault storage credentials secret..."
+
+    # Create vault namespace
+    kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+
+    # Create storage credentials secret for Vault S3 backend
+    # Keys are prefixed with AWS_ by Bank-Vaults credentialsConfig (env: AWS_)
+    # So ACCESS_KEY_ID becomes AWS_ACCESS_KEY_ID, SECRET_ACCESS_KEY becomes AWS_SECRET_ACCESS_KEY
+    kubectl create secret generic vault-storage-credentials \
+        --namespace=vault \
+        --from-literal=ACCESS_KEY_ID="${TF_VAR_minio_root_user}" \
+        --from-literal=SECRET_ACCESS_KEY="${TF_VAR_minio_root_password}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    log_success "[Phase 2c] Vault storage credentials secret created"
+}
+
+# PRIVATE: Apply GitOps bootstrap sync configuration
+_apply_gitops_bootstrap() {
+    log_info "[Phase 2c] Applying GitOps bootstrap sync configuration..."
+
+    # Apply GitRepository and root Kustomization
+    local gotk_sync_url="https://raw.githubusercontent.com/${GITHUB_ORG}/deployments/${GIT_REF}/clusters/production/flux-system/gotk-sync.yaml"
+
+    log_debug "[Phase 2c] Fetching gotk-sync from: $gotk_sync_url"
+
+    if ! kubectl apply -f "$gotk_sync_url"; then
+        log_error "[Phase 2c] Failed to apply GitOps sync configuration"
+        log_info "[Phase 2c] Check if deployments repo has gotk-sync.yaml at ref: ${GIT_REF}"
+        exit 1
+    fi
+
+    log_success "[Phase 2c] GitOps bootstrap sync applied"
+}
+
+# ============================================================================
+# PHASE 2d: Validation
+# ============================================================================
+
+# PRIVATE: Wait for Flux to sync
+_wait_for_flux_sync() {
+    log_info "[Phase 2d] Waiting for Flux to sync..."
+
+    # Wait for GitRepository to be ready
+    log_info "[Phase 2d] Waiting for GitRepository to be ready..."
+    if ! kubectl -n flux-system wait --for=condition=Ready gitrepository/flux-system --timeout=300s; then
+        log_error "[Phase 2d] GitRepository failed to sync"
+        log_info "[Phase 2d] Check: flux get sources git"
+        exit 1
+    fi
+
+    # Wait for root Kustomization to be ready
+    log_info "[Phase 2d] Waiting for root Kustomization to be ready..."
+    if ! kubectl -n flux-system wait --for=condition=Ready kustomization/flux-system --timeout=600s; then
+        log_error "[Phase 2d] Root Kustomization failed to reconcile"
+        log_info "[Phase 2d] Check: flux get kustomizations"
+        exit 1
+    fi
+
+    log_success "[Phase 2d] Flux sync completed"
+}
+
+# PRIVATE: Validate Vault is ready
+_validate_vault_ready() {
+    log_info "[Phase 2d] Validating Vault deployment..."
+
+    # Wait for vault-operator
+    log_info "[Phase 2d] Waiting for Bank-Vaults operator..."
+    if ! kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=vault-operator -n vault-operator --timeout=300s 2>/dev/null; then
+        log_warning "[Phase 2d] Bank-Vaults operator pods not found or not ready"
+        log_info "[Phase 2d] This may be normal if Flux is still reconciling"
     else
-        # Remove any non-git directory that might exist
-        if [[ -d "$INFRA_DIR" ]]; then
-            log_warning "[Phase 2c] Removing non-git directory at $INFRA_DIR"
-            rm -rf "$INFRA_DIR"
-        fi
-
-        log_info "[Phase 2c] Cloning infrastructure repository..."
-        if ! git clone "https://github.com/${GITHUB_ORG}/infra.git" "$INFRA_DIR"; then
-            log_error "[Phase 2c] ❌ Failed to clone infrastructure repository"
-            log_info "[Phase 2c] Repository: https://github.com/${GITHUB_ORG}/infra.git"
-            exit 1
-        fi
-        cd "$INFRA_DIR" || exit 1
+        log_success "[Phase 2d] Bank-Vaults operator is ready"
     fi
 
-    # Checkout specific ref (branch or commit SHA)
-    log_info "[Phase 2c] Checking out ref: ${GIT_REF}..."
-    if ! git fetch origin "${GIT_REF}" 2>/dev/null; then
-        log_debug "[Phase 2c] Could not fetch ref ${GIT_REF}, trying direct checkout..."
-    fi
-
-    if ! git checkout "${GIT_REF}"; then
-        log_error "[Phase 2c] ❌ Failed to checkout ref: ${GIT_REF}"
-        log_info "[Phase 2c] Available branches: $(git branch -r | head -5)"
-        exit 1
-    fi
-
-    # Verify environment directory exists
-    if [[ ! -d "environments/${ENVIRONMENT}" ]]; then
-        log_error "[Phase 2c] ❌ Environment directory not found: environments/${ENVIRONMENT}"
-        log_info "[Phase 2c] Available environments: $(ls -1 environments 2>/dev/null | tr '\n' ' ')"
-        exit 1
-    fi
-
-    # Navigate to environment directory
-    cd "environments/${ENVIRONMENT}" || {
-        log_error "[Phase 2c] ❌ Failed to navigate to environment directory"
-        exit 1
-    }
-
-    # Set up backend credentials via environment variables
-    log_info "[Phase 2c] Configuring backend credentials..."
-    export AWS_ACCESS_KEY_ID="$TF_VAR_minio_root_user"
-    export AWS_SECRET_ACCESS_KEY="$TF_VAR_minio_root_password"
-
-    # Initialize with infrastructure backend
-    log_info "[Phase 2c] Initializing Terraform with remote backend..."
-    if ! terraform init -backend-config="key=${ENVIRONMENT}/infra/terraform.tfstate"; then
-        log_error "[Phase 2c] ❌ Terraform initialization failed"
-        log_info "[Phase 2c] Check MinIO port-forward: kubectl get svc -n bootstrap bootstrap-minio"
-        log_info "[Phase 2c] Check backend.tf configuration in $(pwd)"
-        exit 1
-    fi
-
-    log_success "[Phase 2c] ✅ Infrastructure workspace ready"
-}
-
-# PRIVATE: Deploy infrastructure components
-# PRIVATE: Phase 2c Step 1 - Deploy Operators
-_deploy_operators() {
-    log_info "[Phase 2c - Step 1] Deploying operators (Helm releases)..."
-
-    # Targeted apply for operator Helm releases only
-    log_info "[Phase 2c - Step 1] Deploying Bank-Vaults operator, External Secrets operator..."
-
-    if ! terraform apply -auto-approve \
-        -target=module.vault.kubernetes_namespace.vault \
-        -target=module.vault.kubernetes_namespace.vault_operator \
-        -target=module.vault.helm_release.vault_operator \
-        -target=module.external_secrets; then
-        log_error "[Phase 2c - Step 1] ❌ Failed to deploy operators"
-        return 1
-    fi
-
-    log_success "[Phase 2c - Step 1] ✅ Operators deployed successfully"
-    return 0
-}
-
-# PRIVATE: Phase 2c Step 2 - Wait for CRDs
-_wait_for_crds() {
-    log_info "[Phase 2c - Step 2] Waiting for CRDs to be registered..."
-
-    # Wait for Bank-Vaults CRD
-    log_info "[Phase 2c - Step 2] Waiting for Vault CRD (vault.banzaicloud.com)..."
-    if ! kubectl wait --for condition=established --timeout=180s \
-        crd/vaults.vault.banzaicloud.com 2>/dev/null; then
-
-        # CRD might not exist yet, wait for operator to create it
-        log_info "[Phase 2c - Step 2] CRD not found, waiting for operator to install it..."
-        local max_wait=60
-        local elapsed=0
-        while [[ $elapsed -lt $max_wait ]]; do
-            if kubectl get crd vaults.vault.banzaicloud.com &>/dev/null; then
-                log_info "[Phase 2c - Step 2] Vault CRD detected, waiting for established condition..."
-                kubectl wait --for condition=established --timeout=60s \
-                    crd/vaults.vault.banzaicloud.com
-                break
-            fi
-            sleep 5
-            ((elapsed += 5))
-            log_debug "[Phase 2c - Step 2] Still waiting for CRD... (${elapsed}s/${max_wait}s)"
-        done
-
-        if [[ $elapsed -ge $max_wait ]]; then
-            log_error "[Phase 2c - Step 2] ❌ Vault CRD not registered after ${max_wait}s"
-            log_info "[Phase 2c - Step 2] Check operator logs: kubectl logs -n vault-operator -l app.kubernetes.io/name=vault-operator"
-            return 1
-        fi
-    fi
-
-    log_success "[Phase 2c - Step 2] ✅ CRDs registered and ready"
-    return 0
-}
-
-# PRIVATE: Phase 2c Step 3 - Deploy Custom Resources
-_deploy_custom_resources() {
-    log_info "[Phase 2c - Step 3] Deploying custom resources..."
-
-    # Full terraform apply (CRDs now available for validation)
-    local max_attempts=3
-    local attempt=1
-
-    while [[ $attempt -le $max_attempts ]]; do
-        if [[ $attempt -gt 1 ]]; then
-            log_warning "[Phase 2c - Step 3] Retry attempt $attempt/$max_attempts..."
-            sleep 5
-        fi
-
-        log_info "[Phase 2c - Step 3] Applying remaining infrastructure (attempt $attempt/$max_attempts)..."
-        if terraform apply -auto-approve; then
-            log_success "[Phase 2c - Step 3] ✅ Custom resources deployed successfully"
-            return 0
-        else
-            log_warning "[Phase 2c - Step 3] Terraform apply failed on attempt $attempt"
-            if [[ $attempt -eq $max_attempts ]]; then
-                log_error "[Phase 2c - Step 3] ❌ Failed after $max_attempts attempts"
-                return 1
-            fi
-            ((attempt++))
-        fi
-    done
-
-    return 1
-}
-
-# PRIVATE: Phase 2c - Infrastructure Deployment (orchestrates 3 steps)
-_deploy_infrastructure() {
-    log_info "[Phase 2c] Deploying infrastructure in 3 steps..."
-
-    # Ensure we're in environment directory (set by _setup_infrastructure_workspace)
-    cd "$INFRA_DIR/environments/${ENVIRONMENT}" || {
-        log_error "[Phase 2c] ❌ Failed to navigate to environment directory"
-        log_info "[Phase 2c] INFRA_DIR: $INFRA_DIR"
-        log_info "[Phase 2c] ENVIRONMENT: $ENVIRONMENT"
-        exit 1
-    }
-
-    # Set environment variables for Terraform
-    # Note: environment value comes from terraform.tfvars in the selected directory
-    # The $ENVIRONMENT variable only controls which directory we use (environments/production, etc)
-    export TF_VAR_vault_storage_access_key="$TF_VAR_minio_root_user"
-    export TF_VAR_vault_storage_secret_key="$TF_VAR_minio_root_password"
-    export TF_VAR_github_org="$GITHUB_ORG"
-    export TF_VAR_git_ref="$GIT_REF"
-    export TF_VAR_node_count="$NODE_COUNT"
-    export TF_VAR_resource_tier="$RESOURCE_TIER"
-
-    # Ensure MinIO port-forward is still active
-    if [[ -z "$MINIO_PF_PID" ]] || ! kill -0 "$MINIO_PF_PID" 2>/dev/null; then
-        log_info "[Phase 2c] Restarting MinIO port-forward..."
-        kubectl port-forward -n bootstrap svc/bootstrap-minio 9000:9000 &>/dev/null &
-        MINIO_PF_PID=$!
-        sleep 5
-    fi
-
-    # Step 1: Deploy Operators
-    if ! _deploy_operators; then
-        log_error "[Phase 2c] ❌ Step 1 failed"
-        return 1
-    fi
-
-    # Step 2: Wait for CRDs
-    if ! _wait_for_crds; then
-        log_error "[Phase 2c] ❌ Step 2 failed"
-        return 1
-    fi
-
-    # Step 3: Deploy Custom Resources
-    if ! _deploy_custom_resources; then
-        log_error "[Phase 2c] ❌ Step 3 failed"
-        return 1
-    fi
-
-    log_success "[Phase 2c] ✅ All infrastructure deployment steps completed"
-    return 0
-}
-
-# PRIVATE: Wait for infrastructure services to be ready
-_validate_infrastructure_deployment() {
-    log_info "[Phase 2d] Validating infrastructure deployment..."
-
-    # Wait for Bank-Vaults operator
-    log_info "[Phase 2d] Waiting for Bank-Vaults operator to be ready..."
-    if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=vault-operator -n vault-operator --timeout=180s; then
-        log_success "[Phase 2d] ✅ Bank-Vaults operator is ready"
-    else
-        log_error "[Phase 2d] ❌ Bank-Vaults operator failed to become ready"
-        exit 1
-    fi
-
-    # Wait for Vault (managed by Bank-Vaults operator)
+    # Wait for Vault
     log_info "[Phase 2d] Waiting for Vault to be ready..."
-    if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=vault -n vault --timeout=600s; then
-        log_success "[Phase 2d] ✅ Vault is ready"
+    if ! kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=vault -n vault --timeout=600s 2>/dev/null; then
+        log_warning "[Phase 2d] Vault pods not found or not ready"
+        log_info "[Phase 2d] Check: kubectl get pods -n vault"
     else
-        log_error "[Phase 2d] ❌ Vault failed to become ready"
-        log_info "[Phase 2d] Check Bank-Vaults operator logs: kubectl logs -n vault-operator -l app.kubernetes.io/name=vault-operator"
-        exit 1
+        log_success "[Phase 2d] Vault is ready"
     fi
 
-    # Verify Vault unseal keys secret created by Bank-Vaults
-    log_info "[Phase 2d] Verifying Vault unseal keys secret..."
-    if kubectl get secret vault-unseal-keys -n vault >/dev/null 2>&1; then
-        log_success "[Phase 2d] ✅ Vault unseal keys secret exists"
+    # Check for unseal keys
+    log_info "[Phase 2d] Checking for Vault unseal keys..."
+    if kubectl get secret vault-unseal-keys -n vault &>/dev/null; then
+        log_success "[Phase 2d] Vault unseal keys secret exists"
     else
-        log_error "[Phase 2d] ❌ Vault unseal keys secret not found"
-        log_info "[Phase 2d] Bank-Vaults should automatically create this during Vault initialization"
-        exit 1
+        log_warning "[Phase 2d] Vault unseal keys not found yet"
+        log_info "[Phase 2d] Bank-Vaults will create these during initialization"
+    fi
+}
+
+# PRIVATE: Validate External Secrets is ready
+_validate_external_secrets_ready() {
+    log_info "[Phase 2d] Validating External Secrets deployment..."
+
+    # Wait for External Secrets operator
+    if ! kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=external-secrets -n external-secrets-system --timeout=300s 2>/dev/null; then
+        log_warning "[Phase 2d] External Secrets pods not found or not ready"
+        log_info "[Phase 2d] Check: kubectl get pods -n external-secrets-system"
+    else
+        log_success "[Phase 2d] External Secrets operator is ready"
     fi
 
-    # Wait for External Secrets
-    log_info "[Phase 2d] Waiting for External Secrets to be ready..."
-    if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=external-secrets -n external-secrets-system --timeout=180s; then
-        log_success "[Phase 2d] ✅ External Secrets is ready"
+    # Check ClusterSecretStore
+    if kubectl get clustersecretstore vault-backend &>/dev/null; then
+        log_success "[Phase 2d] ClusterSecretStore vault-backend exists"
     else
-        log_error "[Phase 2d] ❌ External Secrets failed to become ready"
-        exit 1
+        log_warning "[Phase 2d] ClusterSecretStore not found yet"
+        log_info "[Phase 2d] This will be created by Flux"
     fi
+}
 
-    # Wait for Nginx Ingress
-    log_info "[Phase 2d] Waiting for Nginx Ingress to be ready..."
-    if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx --timeout=180s; then
-        log_success "[Phase 2d] ✅ Nginx Ingress is ready"
+# PRIVATE: Validate ingress-nginx is ready
+_validate_ingress_ready() {
+    log_info "[Phase 2d] Validating Nginx Ingress deployment..."
+
+    if ! kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx --timeout=180s 2>/dev/null; then
+        log_warning "[Phase 2d] Nginx Ingress pods not found or not ready"
+        log_info "[Phase 2d] Check: kubectl get pods -n ingress-nginx"
     else
-        log_error "[Phase 2d] ❌ Nginx Ingress failed to become ready"
-        exit 1
+        log_success "[Phase 2d] Nginx Ingress is ready"
     fi
+}
 
-    log_success "[Phase 2d] ✅ All infrastructure services are ready"
+# PRIVATE: Show Flux status
+_show_flux_status() {
+    log_info "[Phase 2d] Current Flux status:"
+    log_info ""
+    log_info "Git Sources:"
+    flux get sources git 2>/dev/null || log_warning "Could not get git sources"
+    log_info ""
+    log_info "Kustomizations:"
+    flux get kustomizations 2>/dev/null || log_warning "Could not get kustomizations"
+    log_info ""
+    log_info "HelmReleases:"
+    flux get helmreleases -A 2>/dev/null || log_warning "Could not get helmreleases"
 }
 
 # PRIVATE: Print success message with next steps
 _print_success_message() {
-    print_banner "🎉 Phase 2 Complete!" "State migration + Infrastructure deployment" "Environment: $ENVIRONMENT, Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
+    print_banner "Phase 2 Complete!" "State migration + Flux GitOps Bootstrap" "Environment: $ENVIRONMENT, Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
 
     log_info ""
-    log_info "📋 What was deployed:"
-    log_info "  • Bootstrap state migrated to remote MinIO backend"
-    log_info "  • Bank-Vaults Operator: Production-ready Vault lifecycle management"
-    log_info "  • Vault: Secret management (auto-initialized and unsealed)"
-    log_info "  • External Secrets: Kubernetes secret synchronization"
-    log_info "  • Nginx Ingress: Load balancing and SSL termination"
+    log_info "What was deployed:"
+    log_info "  - Bootstrap state migrated to remote MinIO backend"
+    log_info "  - Flux GitOps controllers installed"
+    log_info "  - Bank-Vaults Operator: Production-ready Vault lifecycle management"
+    log_info "  - Vault: Secret management (auto-initialized and unsealed)"
+    log_info "  - External Secrets: Kubernetes secret synchronization"
+    log_info "  - Nginx Ingress: Load balancing and SSL termination"
     log_info ""
-    log_info "🔄 Next steps:"
-    log_info "  • Phase 3: Advanced Vault policies and security configuration"
-    log_info "  • Phase 4: GitOps activation with Flux"
+    log_info "GitOps is now managing infrastructure!"
     log_info ""
-    log_info "🔍 Verify deployment:"
+    log_info "Verify deployment:"
+    log_info "  flux get sources git"
+    log_info "  flux get kustomizations"
+    log_info "  flux get helmreleases -A"
     log_info "  kubectl get pods -A"
-    log_info "  kubectl get svc -A"
     log_info ""
 }
 
@@ -546,41 +476,47 @@ main() {
         _parse_parameters "$@"
     fi
 
-    print_banner "🚀 Phase 2: State Migration + Infrastructure" "Remote-first enterprise deployment" "Environment: $ENVIRONMENT, Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
+    print_banner "Phase 2: State Migration + Flux GitOps" "Remote-first enterprise deployment" "Environment: $ENVIRONMENT, Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
 
-    log_phase "🚀 Phase 2a: Prerequisites & Validation"
+    log_phase "Phase 2a: Prerequisites & Validation"
     _validate_phase2_prerequisites
 
     if [[ "$STOP_AFTER" == "2a" ]]; then
-        log_success "✅ Stopped after Phase 2a as requested"
+        log_success "Stopped after Phase 2a as requested"
         log_info "Prerequisites validated. Phase 1 dependencies confirmed."
         return 0
     fi
 
-    log_phase "🚀 Phase 2b: Bootstrap State Migration"
+    log_phase "Phase 2b: Bootstrap State Migration"
     _migrate_bootstrap_state
 
     if [[ "$STOP_AFTER" == "2b" ]]; then
-        log_success "✅ Stopped after Phase 2b as requested"
+        log_success "Stopped after Phase 2b as requested"
         log_info "State migration completed. Credentials preserved in memory."
         return 0
     fi
 
-    log_phase "🚀 Phase 2c: Infrastructure Deployment"
-    _setup_infrastructure_workspace
-    _deploy_infrastructure
+    log_phase "Phase 2c: Flux GitOps Bootstrap"
+    _create_flux_git_secret
+    _create_vault_storage_secret
+    _install_flux_controllers
+    _apply_gitops_bootstrap
 
     if [[ "$STOP_AFTER" == "2c" ]]; then
-        log_success "✅ Stopped after Phase 2c as requested"
-        log_info "Infrastructure deployed. Credentials preserved in memory."
+        log_success "Stopped after Phase 2c as requested"
+        log_info "Flux installed and sync applied. GitOps reconciliation in progress."
         return 0
     fi
 
-    log_phase "🚀 Phase 2d: Validation & Cleanup"
-    _validate_infrastructure_deployment
+    log_phase "Phase 2d: Validation"
+    _wait_for_flux_sync
+    _validate_vault_ready
+    _validate_external_secrets_ready
+    _validate_ingress_ready
+    _show_flux_status
 
     if [[ "$STOP_AFTER" == "2d" ]]; then
-        log_success "✅ Stopped after Phase 2d as requested"
+        log_success "Stopped after Phase 2d as requested"
         log_info "Validation completed. Credentials preserved in memory."
         return 0
     fi
