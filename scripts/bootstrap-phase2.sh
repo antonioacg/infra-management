@@ -277,13 +277,17 @@ _install_flux_controllers() {
         exit 1
     fi
 
-    # Wait for Flux controllers to be ready
+    # Wait for Flux controllers to be ready (wait for deployments to be Available)
     log_info "[Phase 2c] Waiting for Flux controllers to be ready..."
-    if ! kubectl -n flux-system wait --for=condition=Ready pod -l app.kubernetes.io/part-of=flux --timeout=300s; then
-        log_error "[Phase 2c] Flux controllers failed to become ready"
-        log_info "[Phase 2c] Check flux-system pods: kubectl get pods -n flux-system"
-        exit 1
-    fi
+    local flux_controllers=("source-controller" "kustomize-controller" "helm-controller" "notification-controller")
+    for controller in "${flux_controllers[@]}"; do
+        log_debug "[Phase 2c] Waiting for $controller..."
+        if ! kubectl -n flux-system wait --for=condition=Available deployment/"$controller" --timeout=300s; then
+            log_error "[Phase 2c] $controller failed to become ready"
+            log_info "[Phase 2c] Check flux-system pods: kubectl get pods -n flux-system"
+            exit 1
+        fi
+    done
 
     log_success "[Phase 2c] Flux controllers installed and ready"
 }
