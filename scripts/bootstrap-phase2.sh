@@ -326,14 +326,12 @@ _create_flux_sync() {
         exit 1
     fi
 
-    # Create Kustomization
+    # Create Kustomization (don't wait - Phase 2d handles validation)
     if ! flux create kustomization flux-system \
         --source=GitRepository/flux-system \
         --path="clusters/${ENVIRONMENT}" \
         --prune=true \
-        --interval=10m \
-        --wait=true \
-        --timeout=5m; then
+        --interval=10m; then
         log_error "[Phase 2c] Failed to create Kustomization"
         exit 1
     fi
