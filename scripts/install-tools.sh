@@ -171,7 +171,15 @@ _install_flux() {
     log_info "Installing Flux CLI v${FLUX_VERSION}"
 
     # Install Flux using official script with pinned version
-    if FLUX_VERSION="${FLUX_VERSION}" curl_with_retry "https://fluxcd.io/install.sh" | sudo bash; then
+    # FLUX_VERSION must be passed to the bash process that runs the script
+    if curl_with_retry "https://fluxcd.io/install.sh" | sudo FLUX_VERSION="${FLUX_VERSION}" bash; then
+        # Verify the installed version matches
+        local installed_version
+        installed_version=$(flux version --client 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+        if [[ "$installed_version" != "$FLUX_VERSION" ]]; then
+            log_error "Flux version mismatch: installed v${installed_version}, expected v${FLUX_VERSION}"
+            return 1
+        fi
         log_success "Flux CLI v${FLUX_VERSION} installed successfully"
     else
         log_error "Failed to install Flux CLI v${FLUX_VERSION} - check network connectivity and permissions"
