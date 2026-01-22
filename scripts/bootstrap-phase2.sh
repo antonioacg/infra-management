@@ -23,7 +23,6 @@ STOP_AFTER=""
 
 # Required from Phase 0 - no defaults, must be set
 FLUX_VERSION="${FLUX_VERSION:-}"
-GITHUB_ACCOUNT_TYPE="${GITHUB_ACCOUNT_TYPE:-}"
 
 # Load import utility and logging library (bash 3.2+ compatible)
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
@@ -75,7 +74,6 @@ _parse_parameters() {
                 echo "  LOG_LEVEL             Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
                 echo "  GITHUB_TOKEN          GitHub token for Flux git authentication (required)"
                 echo "  GITHUB_ORG            GitHub organization/user (default: antonioacg)"
-                echo "  GITHUB_ACCOUNT_TYPE   Account type: 'personal' or 'organization' (from Phase 0, required)"
                 echo "  FLUX_VERSION          Flux version to install (from Phase 0, required)"
                 echo "  DEPLOYMENTS_REF       Git ref for deployments repo (default: main)"
                 echo ""
@@ -141,18 +139,7 @@ _validate_phase2_prerequisites() {
         exit 1
     fi
 
-    if [[ -z "${GITHUB_ACCOUNT_TYPE:-}" ]]; then
-        log_error "[Phase 2a] GITHUB_ACCOUNT_TYPE environment variable is required"
-        log_error "[Phase 2a] This should be detected by Phase 0 (must be 'personal' or 'organization')"
-        exit 1
-    fi
-
-    if [[ "$GITHUB_ACCOUNT_TYPE" != "personal" && "$GITHUB_ACCOUNT_TYPE" != "organization" ]]; then
-        log_error "[Phase 2a] GITHUB_ACCOUNT_TYPE must be 'personal' or 'organization', got: '${GITHUB_ACCOUNT_TYPE}'"
-        exit 1
-    fi
-
-    log_success "[Phase 2a] Phase 0 configuration validated (Flux v${FLUX_VERSION}, ${GITHUB_ACCOUNT_TYPE} account)"
+    log_success "[Phase 2a] Phase 0 configuration validated (Flux v${FLUX_VERSION})"
 
     # Check required credentials from Phase 1
     if [[ -z "${TF_VAR_minio_root_user:-}" || -z "${TF_VAR_minio_root_password:-}" || -z "${TF_VAR_postgres_password:-}" ]]; then
@@ -289,49 +276,69 @@ EOF
 # PHASE 2c: Flux GitOps Bootstrap
 # ============================================================================
 
-# PRIVATE: Bootstrap Flux using flux bootstrap github command
-_flux_bootstrap_github() {
-    log_info "[Phase 2c] Bootstrapping Flux via 'flux bootstrap github'..."
+# PRIVATE: Install Flux controllers
+_install_flux_controllers() {
+    log_info "[Phase 2c] Installing Flux controllers v${FLUX_VERSION}..."
 
-    # Build the personal flag based on detected account type
-    local personal_flag=""
-    if [[ "$GITHUB_ACCOUNT_TYPE" == "personal" ]]; then
-        personal_flag="--personal"
-        log_debug "[Phase 2c] Using --personal flag (GitHub user account)"
-    else
-        log_debug "[Phase 2c] No --personal flag (GitHub organization)"
-    fi
-
-    log_info "[Phase 2c] Flux bootstrap configuration:"
-    log_info "[Phase 2c]   Owner: ${GITHUB_ORG}"
-    log_info "[Phase 2c]   Repository: deployments"
-    log_info "[Phase 2c]   Branch: ${DEPLOYMENTS_REF}"
-    log_info "[Phase 2c]   Path: clusters/${ENVIRONMENT}"
-    log_info "[Phase 2c]   Version: v${FLUX_VERSION}"
-    log_info "[Phase 2c]   Account type: ${GITHUB_ACCOUNT_TYPE}"
-
-    # Run flux bootstrap github
-    # This will:
-    # 1. Install Flux controllers at the pinned version
-    # 2. Create the flux-system namespace
-    # 3. Create git authentication secret
-    # 4. Create GitRepository and Kustomization resources
-    # 5. Commit gotk-components.yaml and gotk-sync.yaml to the repo (if needed)
-    if ! flux bootstrap github \
-        --token-auth \
-        --owner="${GITHUB_ORG}" \
-        --repository=deployments \
-        --branch="${DEPLOYMENTS_REF}" \
-        --path="clusters/${ENVIRONMENT}" \
-        ${personal_flag} \
-        --version="v${FLUX_VERSION}"; then
-        log_error "[Phase 2c] Flux bootstrap failed"
+    if ! flux install --version="v${FLUX_VERSION}"; then
+        log_error "[Phase 2c] Failed to install Flux controllers"
         log_info "[Phase 2c] Check: flux check"
-        log_info "[Phase 2c] Check: kubectl get pods -n flux-system"
         exit 1
     fi
 
-    log_success "[Phase 2c] Flux bootstrap completed successfully"
+    # Wait for controllers to be ready
+    log_info "[Phase 2c] Waiting for Flux controllers to be ready..."
+    if ! flux check; then
+        log_error "[Phase 2c] Flux controllers not ready"
+        exit 1
+    fi
+
+    log_success "[Phase 2c] Flux controllers v${FLUX_VERSION} installed"
+}
+
+# PRIVATE: Create Flux git authentication secret
+_create_flux_git_secret() {
+    log_info "[Phase 2c] Creating Flux git authentication secret..."
+
+    kubectl create secret generic flux-git-auth \
+        --namespace=flux-system \
+        --from-literal=username=git \
+        --from-literal=password="${GITHUB_TOKEN}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    log_success "[Phase 2c] Flux git authentication secret created"
+}
+
+# PRIVATE: Create Flux GitRepository and Kustomization
+_create_flux_sync() {
+    log_info "[Phase 2c] Creating Flux sync configuration..."
+    log_info "[Phase 2c]   Repository: https://github.com/${GITHUB_ORG}/deployments"
+    log_info "[Phase 2c]   Branch: ${DEPLOYMENTS_REF}"
+    log_info "[Phase 2c]   Path: clusters/${ENVIRONMENT}"
+
+    # Create GitRepository
+    if ! flux create source git flux-system \
+        --url="https://github.com/${GITHUB_ORG}/deployments" \
+        --branch="${DEPLOYMENTS_REF}" \
+        --secret-ref=flux-git-auth \
+        --interval=1m; then
+        log_error "[Phase 2c] Failed to create GitRepository"
+        exit 1
+    fi
+
+    # Create Kustomization
+    if ! flux create kustomization flux-system \
+        --source=GitRepository/flux-system \
+        --path="clusters/${ENVIRONMENT}" \
+        --prune=true \
+        --interval=10m \
+        --wait=true \
+        --timeout=5m; then
+        log_error "[Phase 2c] Failed to create Kustomization"
+        exit 1
+    fi
+
+    log_success "[Phase 2c] Flux sync configuration created"
 }
 
 # PRIVATE: Create Vault storage credentials secret
@@ -511,8 +518,10 @@ main() {
     fi
 
     log_phase "Phase 2c: Flux GitOps Bootstrap"
+    _install_flux_controllers
+    _create_flux_git_secret
     _create_vault_storage_secret
-    _flux_bootstrap_github
+    _create_flux_sync
 
     if [[ "$STOP_AFTER" == "2c" ]]; then
         log_success "Stopped after Phase 2c as requested"
