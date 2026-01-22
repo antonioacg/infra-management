@@ -146,9 +146,10 @@ if [[ $START_PHASE -gt 1 ]]; then
 fi
 
 # Stack bootstrap cleanup trap when skipping Phase 0
-# (normally Phase 0 would stack it, but we're skipping that)
+# (normally Phase 0 would rename and stack it, but we're skipping that)
 if [[ $START_PHASE -gt 0 ]]; then
-    stack_trap "_cleanup" EXIT
+    rename_function "_cleanup" "_cleanup_bootstrap"
+    stack_trap "_cleanup_bootstrap" EXIT
 fi
 
 # Phase 0: Environment + Tools validation
