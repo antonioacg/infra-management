@@ -57,11 +57,6 @@ resource "helm_release" "bootstrap_minio" {
         name   = "vault-storage"
         policy = "none"
         purge  = false
-      },
-      {
-        name   = "vault-backups"
-        policy = "none"
-        purge  = false
       }
     ]
     persistence = {
