@@ -129,8 +129,7 @@ _validate_environment() {
     log_success "[Phase 0a] ✅ Resources validated: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier (Phase 0 mode)"
 }
 
-# PRIVATE: Detect GitHub account type (User vs Organization)
-# This determines whether --personal flag is needed for flux bootstrap
+# PRIVATE: Validate GitHub token and repository access
 _validate_github_access() {
     log_info "[Phase 0a] Validating GitHub access and configuration..."
 
