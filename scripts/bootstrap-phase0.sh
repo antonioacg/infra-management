@@ -131,45 +131,87 @@ _validate_environment() {
 
 # PRIVATE: Detect GitHub account type (User vs Organization)
 # This determines whether --personal flag is needed for flux bootstrap
-_detect_github_account_type() {
-    log_info "[Phase 0a] Detecting GitHub account type for '${GITHUB_ORG}'..."
+_validate_github_access() {
+    log_info "[Phase 0a] Validating GitHub access and configuration..."
 
     local api_response
-    local account_type
+    local http_code
 
-    # Query GitHub API for account type
+    # Query GitHub API for account (validates token and GITHUB_ORG)
     api_response=$(curl -sfL \
+        -w "%{http_code}" \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
+        -H "Authorization: token ${GITHUB_TOKEN}" \
         "https://api.github.com/users/${GITHUB_ORG}" 2>/dev/null)
 
-    if [[ -z "$api_response" ]]; then
-        log_error "[Phase 0a] Failed to query GitHub API for account '${GITHUB_ORG}'"
-        log_error "[Phase 0a] Check network connectivity and that GITHUB_ORG is valid"
+    http_code="${api_response: -3}"
+    api_response="${api_response%???}"
+
+    if [[ "$http_code" == "401" ]]; then
+        log_error "[Phase 0a] GitHub token is invalid or expired"
+        log_error "[Phase 0a] Check GITHUB_TOKEN environment variable"
+        log_info "[Phase 0a] Get token at: https://github.com/settings/tokens (scopes: repo, workflow)"
+        exit 1
+    elif [[ "$http_code" == "404" ]]; then
+        log_error "[Phase 0a] GitHub account '${GITHUB_ORG}' not found"
+        log_error "[Phase 0a] Check GITHUB_ORG environment variable"
+        exit 1
+    elif [[ "$http_code" != "200" ]]; then
+        log_error "[Phase 0a] GitHub API returned unexpected status: ${http_code}"
+        log_error "[Phase 0a] Response: ${api_response}"
         exit 1
     fi
 
+    local account_type
     account_type=$(echo "$api_response" | jq -r '.type // empty')
 
     if [[ -z "$account_type" ]]; then
-        log_error "[Phase 0a] Could not determine account type for '${GITHUB_ORG}'"
-        log_error "[Phase 0a] API response may indicate account does not exist"
+        log_error "[Phase 0a] Could not parse GitHub API response"
+        log_error "[Phase 0a] Response: ${api_response}"
         exit 1
     fi
 
     if [[ "$account_type" == "User" ]]; then
-        GITHUB_ACCOUNT_TYPE="personal"
         log_success "[Phase 0a] ✅ GitHub account '${GITHUB_ORG}' is a User (personal account)"
     elif [[ "$account_type" == "Organization" ]]; then
-        GITHUB_ACCOUNT_TYPE="organization"
         log_success "[Phase 0a] ✅ GitHub account '${GITHUB_ORG}' is an Organization"
     else
         log_error "[Phase 0a] Unknown GitHub account type: '${account_type}'"
-        log_error "[Phase 0a] Expected 'User' or 'Organization'"
         exit 1
     fi
 
-    export GITHUB_ACCOUNT_TYPE
+    # Validate access to required repositories
+    log_info "[Phase 0a] Validating repository access..."
+
+    local required_repos=("infra-management" "deployments")
+    for repo in "${required_repos[@]}"; do
+        log_debug "[Phase 0a] Checking access to ${GITHUB_ORG}/${repo}..."
+
+        local repo_response
+        local repo_http_code
+
+        repo_response=$(curl -sfL \
+            -w "%{http_code}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_ORG}/${repo}" 2>/dev/null)
+
+        repo_http_code="${repo_response: -3}"
+
+        if [[ "$repo_http_code" == "200" ]]; then
+            log_debug "[Phase 0a] ✅ Access to ${GITHUB_ORG}/${repo}: OK"
+        elif [[ "$repo_http_code" == "404" ]]; then
+            log_error "[Phase 0a] Repository ${GITHUB_ORG}/${repo} not found or no access"
+            log_error "[Phase 0a] Ensure repository exists and your token has 'repo' scope"
+            exit 1
+        else
+            log_warning "[Phase 0a] Unexpected status for ${GITHUB_ORG}/${repo}: ${repo_http_code}"
+        fi
+    done
+
+    log_success "[Phase 0a] ✅ GitHub token and repository access validated"
 }
 
 
@@ -213,7 +255,6 @@ _configure_environment() {
     # Export required environment variables
     export GITHUB_TOKEN="$GITHUB_TOKEN"
     export GITHUB_ORG="$GITHUB_ORG"
-    export GITHUB_ACCOUNT_TYPE="$GITHUB_ACCOUNT_TYPE"
     export KUBECONFIG="$HOME/.kube/config"
 
     # Export resource configuration for future bootstrap
@@ -237,7 +278,7 @@ _print_success_message() {
     log_info ""
     log_info "[Phase 0] 🔍 Testing Summary:"
     log_info "[Phase 0]   • Architecture: $DETECTED_OS/$DETECTED_ARCH"
-    log_info "[Phase 0]   • GitHub: ${GITHUB_ORG} (${GITHUB_ACCOUNT_TYPE})"
+    log_info "[Phase 0]   • GitHub: ${GITHUB_ORG}"
     log_info "[Phase 0]   • Tools verified: kubectl, terraform, helm, flux, jq"
     log_info "[Phase 0]   • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier configured"
     log_info "[Phase 0]   • No repositories cloned (minimal Phase 0 testing)"
@@ -260,7 +301,7 @@ main() {
 
     log_phase "🚀 Phase 0a: Environment Validation"
     _validate_environment
-    _detect_github_account_type
+    _validate_github_access
     detect_system_architecture
 
     log_phase "🚀 Phase 0b: Tool Installation"

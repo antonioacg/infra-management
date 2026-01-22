@@ -166,7 +166,3 @@ clear_bootstrap_credentials() {
 
     log_success "✅ All bootstrap credentials cleared from memory"
 }
-
-# Cleanup credentials on script exit (security best practice)
-# Use stack_trap to preserve any existing EXIT traps
-stack_trap clear_bootstrap_credentials EXIT
