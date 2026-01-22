@@ -14,6 +14,10 @@ ENVIRONMENT="production"
 START_PHASE=0
 STOP_AFTER=""
 
+# Pinned tool versions
+FLUX_VERSION="${FLUX_VERSION:-2.4.0}"
+export FLUX_VERSION
+
 # Load import utility and logging library
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
@@ -91,6 +95,8 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Environment Variables:"
             echo "  GITHUB_TOKEN        GitHub token (required)"
+            echo "  GITHUB_ORG          GitHub organization/user (default: antonioacg)"
+            echo "  FLUX_VERSION        Flux version to install (default: 2.4.0)"
             echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
             echo ""
             echo "Examples:"

@@ -145,22 +145,38 @@ _install_kubectl() {
 }
 
 # PRIVATE: Install Flux CLI
+# Uses FLUX_VERSION env var to pin version (required, no default)
 _install_flux() {
-    if _command_exists flux; then
-        log_success "Flux CLI already installed ($(flux version --client 2>/dev/null | grep 'flux version' || echo 'version unknown'))"
-        return 0
-    fi
-    
-    log_info "Installing Flux CLI"
-
-    # Install Flux using official script with error handling
-    if curl_with_retry "https://fluxcd.io/install.sh" | sudo bash; then
-        log_success "Flux CLI installed successfully"
-    else
-        log_error "Failed to install Flux CLI - check network connectivity and permissions"
+    # Require explicit version - no defaults
+    if [[ -z "${FLUX_VERSION:-}" ]]; then
+        log_error "FLUX_VERSION environment variable is required"
+        log_error "Set FLUX_VERSION to the desired Flux CLI version (e.g., '2.6.4')"
         return 1
     fi
-    
+
+    if _command_exists flux; then
+        local installed_version
+        installed_version=$(flux version --client 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+
+        if [[ "$installed_version" == "$FLUX_VERSION" ]]; then
+            log_success "Flux CLI already installed at required version v${FLUX_VERSION}"
+            return 0
+        else
+            log_warning "Flux CLI version mismatch: installed v${installed_version}, required v${FLUX_VERSION}"
+            log_info "Reinstalling Flux CLI at required version..."
+            sudo rm -f "$(command -v flux)"
+        fi
+    fi
+
+    log_info "Installing Flux CLI v${FLUX_VERSION}"
+
+    # Install Flux using official script with pinned version
+    if FLUX_VERSION="${FLUX_VERSION}" curl_with_retry "https://fluxcd.io/install.sh" | sudo bash; then
+        log_success "Flux CLI v${FLUX_VERSION} installed successfully"
+    else
+        log_error "Failed to install Flux CLI v${FLUX_VERSION} - check network connectivity and permissions"
+        return 1
+    fi
 }
 
 # PRIVATE: Install Helm

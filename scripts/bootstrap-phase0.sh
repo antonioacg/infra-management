@@ -11,6 +11,10 @@ GIT_REF="${GIT_REF:-main}"
 NODE_COUNT=1
 RESOURCE_TIER="small"
 
+# Pinned tool versions - required, no defaults for critical dependencies
+FLUX_VERSION="${FLUX_VERSION:-2.4.0}"
+export FLUX_VERSION
+
 # Load import utility and logging library (bash 3.2+ compatible)
 eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-management/${GIT_REF}/scripts/lib/imports.sh)"
 smart_import "infra-management/scripts/lib/logging.sh"
@@ -43,6 +47,8 @@ _parse_parameters() {
                 echo ""
                 echo "Environment Variables:"
                 echo "  GITHUB_TOKEN        GitHub token (use \"test\" for Phase 0 testing)"
+                echo "  GITHUB_ORG          GitHub organization/user (default: antonioacg)"
+                echo "  FLUX_VERSION        Flux CLI version to install (default: 2.4.0)"
                 echo "  LOG_LEVEL           Logging level: ERROR|WARN|INFO|DEBUG|TRACE (default: INFO)"
                 echo ""
                 exit 0
@@ -123,6 +129,49 @@ _validate_environment() {
     log_success "[Phase 0a] ✅ Resources validated: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier (Phase 0 mode)"
 }
 
+# PRIVATE: Detect GitHub account type (User vs Organization)
+# This determines whether --personal flag is needed for flux bootstrap
+_detect_github_account_type() {
+    log_info "[Phase 0a] Detecting GitHub account type for '${GITHUB_ORG}'..."
+
+    local api_response
+    local account_type
+
+    # Query GitHub API for account type
+    api_response=$(curl -sfL \
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/users/${GITHUB_ORG}" 2>/dev/null)
+
+    if [[ -z "$api_response" ]]; then
+        log_error "[Phase 0a] Failed to query GitHub API for account '${GITHUB_ORG}'"
+        log_error "[Phase 0a] Check network connectivity and that GITHUB_ORG is valid"
+        exit 1
+    fi
+
+    account_type=$(echo "$api_response" | jq -r '.type // empty')
+
+    if [[ -z "$account_type" ]]; then
+        log_error "[Phase 0a] Could not determine account type for '${GITHUB_ORG}'"
+        log_error "[Phase 0a] API response may indicate account does not exist"
+        exit 1
+    fi
+
+    if [[ "$account_type" == "User" ]]; then
+        GITHUB_ACCOUNT_TYPE="personal"
+        log_success "[Phase 0a] ✅ GitHub account '${GITHUB_ORG}' is a User (personal account)"
+    elif [[ "$account_type" == "Organization" ]]; then
+        GITHUB_ACCOUNT_TYPE="organization"
+        log_success "[Phase 0a] ✅ GitHub account '${GITHUB_ORG}' is an Organization"
+    else
+        log_error "[Phase 0a] Unknown GitHub account type: '${account_type}'"
+        log_error "[Phase 0a] Expected 'User' or 'Organization'"
+        exit 1
+    fi
+
+    export GITHUB_ACCOUNT_TYPE
+}
+
 
 # PRIVATE: Install required tools
 _install_tools() {
@@ -163,6 +212,8 @@ _configure_environment() {
 
     # Export required environment variables
     export GITHUB_TOKEN="$GITHUB_TOKEN"
+    export GITHUB_ORG="$GITHUB_ORG"
+    export GITHUB_ACCOUNT_TYPE="$GITHUB_ACCOUNT_TYPE"
     export KUBECONFIG="$HOME/.kube/config"
 
     # Export resource configuration for future bootstrap
@@ -186,6 +237,7 @@ _print_success_message() {
     log_info ""
     log_info "[Phase 0] 🔍 Testing Summary:"
     log_info "[Phase 0]   • Architecture: $DETECTED_OS/$DETECTED_ARCH"
+    log_info "[Phase 0]   • GitHub: ${GITHUB_ORG} (${GITHUB_ACCOUNT_TYPE})"
     log_info "[Phase 0]   • Tools verified: kubectl, terraform, helm, flux, jq"
     log_info "[Phase 0]   • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier configured"
     log_info "[Phase 0]   • No repositories cloned (minimal Phase 0 testing)"
@@ -208,6 +260,7 @@ main() {
 
     log_phase "🚀 Phase 0a: Environment Validation"
     _validate_environment
+    _detect_github_account_type
     detect_system_architecture
 
     log_phase "🚀 Phase 0b: Tool Installation"
