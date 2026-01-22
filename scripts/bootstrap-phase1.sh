@@ -89,8 +89,13 @@ _cleanup() {
     # No phase-specific cleanup needed for Phase 1
     # (k3s stays running for Phase 2+)
 
-    # Clear credentials (in orchestrated mode, bootstrap.sh also does this, which is fine)
-    clear_bootstrap_credentials 2>/dev/null || true
+    # Don't clear credentials in orchestrated mode (Phase 2 needs them)
+    # Only clear if running standalone (--skip-validation not passed)
+    if [[ "$SKIP_VALIDATION" != "true" ]]; then
+        clear_bootstrap_credentials 2>/dev/null || true
+    else
+        log_debug "[Phase 1] Orchestrated mode: preserving credentials for Phase 2"
+    fi
 
     # Clean shared temp directory (idempotent)
     rm -rf "$BOOTSTRAP_TEMP_DIR" 2>/dev/null || true
