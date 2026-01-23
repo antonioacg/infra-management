@@ -439,6 +439,40 @@ _validate_external_secrets_ready() {
     fi
 }
 
+# PRIVATE: Store GitHub token in Vault for ExternalSecret sync
+_store_github_token_in_vault() {
+    log_info "[Phase 2d] Storing GitHub token in Vault for ExternalSecret sync..."
+
+    # Check if Vault is ready and we have the root token
+    local vault_pod
+    vault_pod=$(kubectl get pod -n vault -l app.kubernetes.io/name=vault -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+    if [[ -z "$vault_pod" ]]; then
+        log_warning "[Phase 2d] Vault pod not found, skipping token storage"
+        return 0
+    fi
+
+    # Get root token from vault-unseal-keys secret (created by Bank-Vaults)
+    local vault_token
+    vault_token=$(kubectl get secret vault-unseal-keys -n vault -o jsonpath='{.data.root-token}' 2>/dev/null | base64 -d || echo "")
+
+    if [[ -z "$vault_token" ]]; then
+        log_warning "[Phase 2d] Vault root token not found in secret, cannot store GitHub token"
+        log_info "[Phase 2d] Manual action: vault kv put secret/flux/git-auth username=git password=${GITHUB_TOKEN:0:4}..."
+        return 0
+    fi
+
+    # Store GitHub token in Vault using kubectl exec
+    if kubectl exec -n vault "$vault_pod" -- \
+        VAULT_TOKEN="$vault_token" \
+        vault kv put secret/flux/git-auth username=git "password=${GITHUB_TOKEN}" &>/dev/null; then
+        log_success "[Phase 2d] GitHub token stored in Vault at secret/data/flux/git-auth"
+    else
+        log_warning "[Phase 2d] Failed to store GitHub token in Vault"
+        log_info "[Phase 2d] Manual action: kubectl exec -n vault <vault-pod> -- VAULT_TOKEN=<token> vault kv put secret/flux/git-auth username=git password=<token>"
+    fi
+}
+
 # PRIVATE: Validate ingress-nginx is ready
 _validate_ingress_ready() {
     log_info "[Phase 2d] Validating Nginx Ingress deployment..."
@@ -531,6 +565,7 @@ main() {
     _wait_for_flux_sync
     _validate_vault_ready
     _validate_external_secrets_ready
+    _store_github_token_in_vault
     _validate_ingress_ready
     _show_flux_status
 
