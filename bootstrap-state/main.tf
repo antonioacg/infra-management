@@ -174,8 +174,8 @@ resource "kubernetes_secret" "bootstrap_postgresql_superuser" {
   }
 
   data = {
-    username = base64encode("postgres")
-    password = base64encode(var.postgres_password)
+    username = "postgres"
+    password = var.postgres_password
   }
 
   type = "kubernetes.io/basic-auth"
