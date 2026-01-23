@@ -13,7 +13,7 @@
 bucket                      = "terraform-state"
 key                         = "production/bootstrap/terraform.tfstate"
 endpoint                    = "http://bootstrap-minio.bootstrap.svc.cluster.local:9000"
-region                      = "us-east-1"
+region                      = "local"  # MinIO accepts any string
 skip_credentials_validation = true
 skip_metadata_api_check     = true
 skip_region_validation      = true
