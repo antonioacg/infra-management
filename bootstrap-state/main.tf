@@ -21,6 +21,17 @@ terraform {
   }
 }
 
+# Map resource tiers to storage sizes
+locals {
+  tier_sizes = {
+    small  = { minio = "10Gi", postgres = "8Gi" }
+    medium = { minio = "50Gi", postgres = "20Gi" }
+    large  = { minio = "100Gi", postgres = "50Gi" }
+  }
+  minio_size    = local.tier_sizes[var.resource_tier].minio
+  postgres_size = local.tier_sizes[var.resource_tier].postgres
+}
+
 # Bootstrap namespace
 # NOTE: k3s installation handled by bootstrap-phase1.sh script
 resource "kubernetes_namespace" "bootstrap" {
@@ -61,7 +72,7 @@ resource "helm_release" "bootstrap_minio" {
     ]
     persistence = {
       enabled      = true
-      size         = var.minio_storage_size
+      size         = local.minio_size
       storageClass = "local-path"
     }
     service = {
@@ -131,7 +142,7 @@ resource "null_resource" "bootstrap_postgresql" {
         instances: 1
         imageName: ghcr.io/cloudnative-pg/postgresql:17.5
         storage:
-          size: 8Gi
+          size: ${local.postgres_size}
           storageClass: local-path
         bootstrap:
           initdb:
@@ -173,9 +184,9 @@ resource "kubernetes_secret" "bootstrap_postgresql_superuser" {
     namespace = "bootstrap"
   }
 
-  data = {
-    username = base64encode("postgres")
-    password = base64encode(var.postgres_password)
+  string_data = {
+    username = "postgres"
+    password = var.postgres_password
   }
 
   type = "kubernetes.io/basic-auth"
