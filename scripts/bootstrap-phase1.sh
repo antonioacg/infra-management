@@ -89,11 +89,17 @@ _cleanup() {
     # No phase-specific cleanup needed for Phase 1
     # (k3s stays running for Phase 2+)
 
-    # Don't clear credentials in orchestrated mode (Phase 2 needs them)
-    # Only clear if running standalone (--skip-validation not passed)
-    if [[ "$SKIP_VALIDATION" != "true" ]]; then
+    # Always clear credentials on error to prevent leaks
+    # Only preserve credentials on SUCCESS in orchestrated mode (Phase 2 needs them)
+    if [[ $exit_code -ne 0 ]]; then
+        # Error path: always clear credentials to prevent leaks
+        log_debug "[Phase 1] Error detected (exit code $exit_code): clearing credentials"
+        clear_bootstrap_credentials 2>/dev/null || true
+    elif [[ "$SKIP_VALIDATION" != "true" ]]; then
+        # Success + standalone mode: clear credentials
         clear_bootstrap_credentials 2>/dev/null || true
     else
+        # Success + orchestrated mode: preserve for Phase 2
         log_debug "[Phase 1] Orchestrated mode: preserving credentials for Phase 2"
     fi
 

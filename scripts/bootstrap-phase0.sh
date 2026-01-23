@@ -135,9 +135,13 @@ _validate_github_access() {
 
     local api_response
     local http_code
+    local response_headers
 
     # Query GitHub API for account (validates token and GITHUB_ORG)
+    # Capture both headers and body to check OAuth scopes
+    response_headers=$(mktemp)
     api_response=$(curl -sfL \
+        -D "$response_headers" \
         -w "%{http_code}" \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -148,18 +152,61 @@ _validate_github_access() {
     api_response="${api_response%???}"
 
     if [[ "$http_code" == "401" ]]; then
+        rm -f "$response_headers"
         log_error "[Phase 0a] GitHub token is invalid or expired"
         log_error "[Phase 0a] Check GITHUB_TOKEN environment variable"
         log_info "[Phase 0a] Get token at: https://github.com/settings/tokens (scopes: repo, workflow)"
         exit 1
     elif [[ "$http_code" == "404" ]]; then
+        rm -f "$response_headers"
         log_error "[Phase 0a] GitHub account '${GITHUB_ORG}' not found"
         log_error "[Phase 0a] Check GITHUB_ORG environment variable"
         exit 1
     elif [[ "$http_code" != "200" ]]; then
+        rm -f "$response_headers"
         log_error "[Phase 0a] GitHub API returned unexpected status: ${http_code}"
         log_error "[Phase 0a] Response: ${api_response}"
         exit 1
+    fi
+
+    # Validate token has required scopes (repo, workflow)
+    local token_scopes
+    token_scopes=$(grep -i "^x-oauth-scopes:" "$response_headers" | cut -d: -f2- | tr -d ' \r' || echo "")
+    rm -f "$response_headers"
+
+    if [[ -n "$token_scopes" ]]; then
+        log_debug "[Phase 0a] Token scopes: $token_scopes"
+
+        local missing_scopes=""
+
+        # Check for 'repo' scope (required for private repo access)
+        if [[ ! "$token_scopes" =~ (^|,)repo(,|$) ]]; then
+            missing_scopes="repo"
+        fi
+
+        # Check for 'workflow' scope (required for GitHub Actions)
+        if [[ ! "$token_scopes" =~ (^|,)workflow(,|$) ]]; then
+            if [[ -n "$missing_scopes" ]]; then
+                missing_scopes="$missing_scopes, workflow"
+            else
+                missing_scopes="workflow"
+            fi
+        fi
+
+        if [[ -n "$missing_scopes" ]]; then
+            log_error "[Phase 0a] GitHub token missing required scopes: $missing_scopes"
+            log_error "[Phase 0a] Current scopes: $token_scopes"
+            log_info "[Phase 0a] Create a new token at: https://github.com/settings/tokens"
+            log_info "[Phase 0a] Required scopes: repo, workflow"
+            exit 1
+        fi
+
+        log_success "[Phase 0a] ✅ GitHub token scopes validated (repo, workflow)"
+    else
+        # Fine-grained tokens don't return X-OAuth-Scopes header
+        # Fall back to permission checks via API calls
+        log_debug "[Phase 0a] No OAuth scopes header (fine-grained token or GitHub App)"
+        log_debug "[Phase 0a] Will validate permissions via repository access checks"
     fi
 
     local account_type
