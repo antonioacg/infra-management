@@ -78,18 +78,19 @@ flux get kustomizations -A
 
 ---
 
-### Phase 3+: GitOps Managed
+### Post-Bootstrap: GitOps Operations
 
-Everything after Flux is deployed via GitOps.
+After Phase 2, everything is managed via GitOps. No more phases - just git commits.
 
 **Managed by Flux (deployments/ repo)**:
 - Vault with Bank-Vaults operator (auto-unseal)
 - External Secrets Operator
 - Ingress controllers
+- Monitoring
 - Applications
 
 **Key Design**:
-- All changes via git commits
+- All changes via git commits to `deployments/`
 - Flux reconciles resources in correct order
 - No more Terraform after Phase 2
 
@@ -158,7 +159,7 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/boo
 
 1. **Phase 1**: Generated in-memory, never on disk
 2. **Phase 2**: Used for state migration, then cleared
-3. **Phase 3+**: Vault manages all secrets (via Flux)
+3. **Post-bootstrap**: Vault manages all secrets (via Flux)
 
 ### Zero-Secrets Architecture
 

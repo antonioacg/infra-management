@@ -9,7 +9,7 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/boo
   GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=small
 ```
 
-**Current Status**: Phases 0-1 complete. Phase 2 (Flux bootstrap) in development.
+**Current Status**: All phases complete. GitOps operational.
 
 ## Bootstrap Phases
 
@@ -17,8 +17,7 @@ See [BOOTSTRAP.md](BOOTSTRAP.md) for complete details.
 
 - **Phase 0**: Environment & tools validation
 - **Phase 1**: k3s + MinIO + PostgreSQL (LOCAL state)
-- **Phase 2**: State migration + Flux install (REMOTE state)
-- **Phase 3+**: All via GitOps
+- **Phase 2**: State migration + Flux install (REMOTE state) → GitOps takes over
 
 ## Platform Repositories
 
@@ -48,8 +47,8 @@ All tools installed automatically during Phase 0.
 - Flux GitOps controllers
 - State migrated to MinIO
 
-**Phase 3+ (via GitOps):**
-- Vault, External Secrets, ingress, apps
+**Post-bootstrap (via GitOps):**
+- Vault, External Secrets, ingress, monitoring, apps
 
 ## Verification
 
