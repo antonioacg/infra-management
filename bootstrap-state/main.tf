@@ -184,7 +184,7 @@ resource "kubernetes_secret" "bootstrap_postgresql_superuser" {
     namespace = "bootstrap"
   }
 
-  string_data = {
+  data = {
     username = "postgres"
     password = var.postgres_password
   }
