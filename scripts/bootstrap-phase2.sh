@@ -473,6 +473,42 @@ _store_github_token_in_vault() {
     fi
 }
 
+# PRIVATE: Write bootstrap inputs to Vault
+_write_bootstrap_inputs_to_vault() {
+    log_info "[Phase 2d] Writing bootstrap inputs to Vault..."
+
+    local vault_pod vault_token vault_args
+
+    vault_pod=$(kubectl get pods -n vault -l app.kubernetes.io/name=vault \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+    if [[ -z "$vault_pod" ]]; then
+        log_warning "[Phase 2d] Vault pod not found, skipping inputs storage"
+        return 0
+    fi
+
+    vault_token=$(kubectl get secret vault-unseal-keys -n vault \
+        -o jsonpath='{.data.root-token}' 2>/dev/null | base64 -d || echo "")
+
+    if [[ -z "$vault_token" ]]; then
+        log_warning "[Phase 2d] Vault root token not found, skipping inputs storage"
+        return 0
+    fi
+
+    vault_args=$(_collect_vault_input_secrets)
+
+    if [[ -n "$vault_args" ]]; then
+        log_info "Writing env vars matching VAULT_INPUT_* to secret/bootstrap/inputs..."
+        if kubectl exec -n vault "$vault_pod" -- env \
+            VAULT_TOKEN="$vault_token" \
+            vault kv put secret/bootstrap/inputs $vault_args &>/dev/null; then
+            log_success "[Phase 2d] Bootstrap inputs written to Vault"
+        else
+            log_warning "[Phase 2d] Failed to write bootstrap inputs to Vault"
+        fi
+    fi
+}
+
 # PRIVATE: Validate ingress-nginx is ready
 _validate_ingress_ready() {
     log_info "[Phase 2d] Validating Nginx Ingress deployment..."
@@ -564,6 +600,7 @@ main() {
     log_phase "Phase 2d: Validation"
     _wait_for_flux_sync
     _validate_vault_ready
+    _write_bootstrap_inputs_to_vault
     _validate_external_secrets_ready
     _store_github_token_in_vault
     _validate_ingress_ready

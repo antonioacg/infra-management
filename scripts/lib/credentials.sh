@@ -166,3 +166,16 @@ clear_bootstrap_credentials() {
 
     log_success "✅ All bootstrap credentials cleared from memory"
 }
+
+# Collect all VAULT_INPUT_* env vars into a string for vault kv put
+# Format: "key1=value1 key2=value2 ..."
+_collect_vault_input_secrets() {
+    local vault_args=""
+    while IFS='=' read -r name value; do
+        if [[ "$name" == VAULT_INPUT_* ]]; then
+            local key="${name#VAULT_INPUT_}"
+            vault_args+="${key}=${value} "
+        fi
+    done < <(env | grep "^VAULT_INPUT_")
+    echo "$vault_args"
+}
