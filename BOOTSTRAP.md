@@ -139,11 +139,13 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/boo
 
 ## Scaling
 
-| Tier | MinIO | PostgreSQL | Use Case |
-|------|-------|------------|----------|
-| small | 10Gi | 8Gi | Development |
-| medium | 50Gi | 20Gi (HA) | Production |
-| large | 100Gi+ | 50Gi+ | Enterprise |
+| Tier | RAM | Disk | MinIO | PostgreSQL | Use Case |
+|------|-----|------|-------|------------|----------|
+| small | 4GB+ | 20GB+ | 10Gi | 8Gi | Development |
+| medium | 8GB+ | 50GB+ | 50Gi | 20Gi (HA) | Production |
+| large | 16GB+ | 100GB+ | 100Gi+ | 50Gi+ | Enterprise |
+
+**Note**: RAM requirements account for all components (k3s, Flux, Vault, External Secrets, tf-controller, operators). Insufficient RAM causes controller crashes.
 
 ```bash
 ./bootstrap.sh --nodes=N --tier=SIZE
