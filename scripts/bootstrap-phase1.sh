@@ -212,9 +212,10 @@ _setup_node_encryption() {
     sudo chown root:root "$key_file"
 
     # Set container size based on resource tier
+    # Note: Small increased from 5G to 10G to accommodate container images
     local container_size
     case "$RESOURCE_TIER" in
-        "small")  container_size="5G" ;;
+        "small")  container_size="10G" ;;
         "medium") container_size="20G" ;;
         "large")  container_size="50G" ;;
         *)        container_size="10G" ;;

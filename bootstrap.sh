@@ -15,7 +15,7 @@ START_PHASE=0
 STOP_AFTER=""
 
 # Pinned tool versions
-FLUX_VERSION="${FLUX_VERSION:-2.4.0}"
+FLUX_VERSION="${FLUX_VERSION:-2.7.5}"
 export FLUX_VERSION
 
 # Load import utility and logging library
