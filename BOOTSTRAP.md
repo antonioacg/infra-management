@@ -207,6 +207,5 @@ curl -sfL .../bootstrap.sh | GITHUB_TOKEN="ghp_xxx" bash -s -- --nodes=1 --tier=
 
 ## Additional Documentation
 
-- [ARCHITECTURE.md](../ARCHITECTURE.md) - TO-BE architecture
-- [MIGRATION.md](../MIGRATION.md) - Progress tracking
+- [ARCHITECTURE.md](../ARCHITECTURE.md) - System design and decisions
 - [CLAUDE.md](../CLAUDE.md) - Operational procedures
