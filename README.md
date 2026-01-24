@@ -32,7 +32,7 @@ See [BOOTSTRAP.md](BOOTSTRAP.md) for complete details.
 - 4GB+ RAM, 20GB+ storage
 
 **Credentials:**
-- GitHub personal access token with `repo` scope
+- GitHub personal access token with `repo` and `workflow` scopes
 
 All tools installed automatically during Phase 0.
 

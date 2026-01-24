@@ -83,7 +83,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
             echo "  --environment=ENV    Environment: production|staging|development (default: production)"
             echo "  --start-phase=N      Start from phase 0 or 1 (default: 0, use 1 to skip tool install)"
-            echo "  --stop-after=PHASE   Stop after specific phase: 0|1|2|2a|2b|2c|2d"
+            echo "  --stop-after=PHASE   Stop after specific phase: 0|1|2a|2b|2c|2d"
             echo "  --help, -h           Show this help message"
             echo ""
             echo "Phases:"
@@ -115,7 +115,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --tier=SIZE          Resource tier: small|medium|large (default: small)"
             echo "  --environment=ENV    Environment name (default: production)"
             echo "  --start-phase=N      Start from phase 0 or 1 (default: 0)"
-            echo "  --stop-after=PHASE   Stop after specific phase: 0|1|2|2a|2b|2c|2d"
+            echo "  --stop-after=PHASE   Stop after specific phase: 0|1|2a|2b|2c|2d"
             echo "  --help, -h           Show this help message"
             echo ""
             exit 1
@@ -204,7 +204,7 @@ if [[ $START_PHASE -le 1 ]]; then
         unset -f main _cleanup
 
         if [[ "$STOP_AFTER" == "1" ]]; then
-            print_banner "✅ Stopped after Phase 1" "Foundation ready" "Credentials preserved in memory. Next: Run with --start-phase=2"
+            print_banner "✅ Stopped after Phase 1" "Foundation ready" "Re-run full bootstrap to continue (credentials not persisted)"
             exit 0
         fi
     else
@@ -244,7 +244,7 @@ if [[ $START_PHASE -le 2 ]]; then
         unset -f main _cleanup
 
         # Only clean up credentials if we completed full Phase 2 (not a subphase stop)
-        if [[ -z "$STOP_AFTER" || "$STOP_AFTER" == "2" ]]; then
+        if [[ -z "$STOP_AFTER" ]]; then
             # Clean up credentials after successful Phase 2
             smart_import "infra-management/scripts/lib/credentials.sh"
             clear_bootstrap_credentials
@@ -254,7 +254,7 @@ if [[ $START_PHASE -le 2 ]]; then
             log_info "🔒 Credentials preserved in memory (stopped at $STOP_AFTER)"
         fi
 
-        if [[ "$STOP_AFTER" =~ ^2[a-d]?$ ]]; then
+        if [[ "$STOP_AFTER" =~ ^2[a-d]$ ]]; then
             print_banner "✅ Stopped after Phase $STOP_AFTER" "Partial Phase 2 complete" "Credentials preserved. Next steps documented above."
             exit 0
         fi

@@ -113,11 +113,9 @@ curl -sfL https://raw.githubusercontent.com/antonioacg/infra-management/main/boo
 ### Incremental Testing
 
 ```bash
---stop-after=0    # Phase 0 only
---stop-after=1    # Phase 0+1
---stop-after=2    # Full bootstrap
---start-phase=1   # Skip Phase 0
---start-phase=2   # Skip Phase 0+1
+--stop-after=0    # Phase 0 only (tools validation)
+--stop-after=1    # Phase 0+1 (foundation ready)
+--start-phase=1   # Skip Phase 0 (tools already installed)
 ```
 
 ---
