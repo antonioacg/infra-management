@@ -14,10 +14,11 @@ _create_minio_user() {
     log_info "[MinIO] Creating user '$username' with access to bucket '$bucket'..."
 
     # Generate credentials
-    access_key=$(openssl rand -hex 16)
+    # In MinIO, access_key IS the username (we use the friendly name as access_key)
+    access_key="${username}"
     secret_key=$(openssl rand -hex 32)
 
-    log_debug "[MinIO] Generated access_key length: ${#access_key}, secret_key length: ${#secret_key}"
+    log_debug "[MinIO] access_key (username): ${access_key}, secret_key length: ${#secret_key}"
 
     # Create policy JSON
     policy_json=$(cat <<POLICY
@@ -42,17 +43,18 @@ POLICY
         return 1
     }
 
-    # Create user
-    log_debug "[MinIO] Creating user '$username' with generated credentials"
-    if ! mc admin user add minio "${username}" "${access_key}" "${secret_key}" 1>&2; then
-        log_error "[MinIO] Failed to create user '$username'"
+    # Create user (mc admin user add ALIAS ACCESSKEY SECRETKEY)
+    # In MinIO, the access_key IS the username
+    log_debug "[MinIO] Creating user with access_key='$access_key'"
+    if ! mc admin user add minio "${access_key}" "${secret_key}" 1>&2; then
+        log_error "[MinIO] Failed to create user '$access_key'"
         return 1
     fi
 
-    # Attach policy to user
-    log_debug "[MinIO] Attaching policy to user '$username'"
-    if ! mc admin policy attach minio "${username}-policy" --user "$username" 1>&2; then
-        log_error "[MinIO] Failed to attach policy to user '$username'"
+    # Attach policy to user (reference by access_key which is the username)
+    log_debug "[MinIO] Attaching policy to user '$access_key'"
+    if ! mc admin policy attach minio "${username}-policy" --user "$access_key" 1>&2; then
+        log_error "[MinIO] Failed to attach policy to user '$access_key'"
         return 1
     fi
 
