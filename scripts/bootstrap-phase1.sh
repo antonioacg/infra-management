@@ -812,19 +812,19 @@ _deploy_bootstrap_storage() {
 _verify_bootstrap_foundation() {
     log_info "[Phase 1c] Verifying bootstrap foundation..."
 
-    # Wait for MinIO to be ready
+    # Wait for MinIO to be ready (deployed to storage namespace)
     log_info "[Phase 1c] Waiting for MinIO to be ready..."
-    kubectl wait --for=condition=Ready pod -l app=minio -n bootstrap --timeout=180s
+    kubectl wait --for=condition=Ready pod -l app=minio -n storage --timeout=180s
 
-    # Wait for PostgreSQL to be ready
+    # Wait for PostgreSQL to be ready (deployed to databases namespace)
     log_info "[Phase 1c] Waiting for PostgreSQL to be ready..."
-    kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=bootstrap-postgresql -n bootstrap --timeout=180s
+    kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=postgresql -n databases --timeout=180s
 
     # Test MinIO connectivity using local mc client (installed in Phase 0)
     log_info "[Phase 1c] Testing MinIO S3 connectivity..."
 
     # Port-forward to MinIO service for local testing
-    kubectl port-forward -n bootstrap svc/bootstrap-minio 9000:9000 >/dev/null 2>&1 &
+    kubectl port-forward -n storage svc/minio 9000:9000 >/dev/null 2>&1 &
     local pf_pid=$!
     sleep 2  # Wait for port-forward to establish
 
@@ -845,7 +845,7 @@ _verify_bootstrap_foundation() {
 
     # Verify terraform_locks database (CloudNativePG creates it via initdb bootstrap)
     log_info "[Phase 1c] Verifying terraform_locks database..."
-    kubectl exec -n bootstrap bootstrap-postgresql-1 -- bash -c "PGPASSWORD='$POSTGRES_PASSWORD' psql -U postgres -d terraform_locks -c 'SELECT 1;'" >/dev/null 2>&1 && {
+    kubectl exec -n databases postgresql-1 -- bash -c "PGPASSWORD='$POSTGRES_PASSWORD' psql -U postgres -d terraform_locks -c 'SELECT 1;'" >/dev/null 2>&1 && {
         log_success "[Phase 1c] PostgreSQL connectivity test successful"
     } || {
         log_warning "[Phase 1c] PostgreSQL connectivity test failed (database may still be initializing)"
@@ -853,8 +853,8 @@ _verify_bootstrap_foundation() {
 
     # Show deployed components
     log_success "[Phase 1c] ✅ Bootstrap foundation verified"
-    log_info "[Phase 1c]   • MinIO: S3-compatible storage for Terraform state"
-    log_info "[Phase 1c]   • PostgreSQL: State locking database"
+    log_info "[Phase 1c]   • MinIO: S3-compatible storage for Terraform state (storage namespace)"
+    log_info "[Phase 1c]   • PostgreSQL: State locking database (databases namespace)"
     log_info "[Phase 1c]   • Local State: terraform.tfstate in $(pwd)"
 }
 
@@ -881,9 +881,10 @@ _print_success_message() {
     log_info "[Phase 1]   ./scripts/bootstrap-phase2.sh --nodes=${NODE_COUNT} --tier=${RESOURCE_TIER} --skip-validation"
     log_info ""
     log_info "[Phase 1] 🛠️  Manual verification commands:"
-    log_info "[Phase 1]   kubectl get pods -n bootstrap                    # Check storage pods"
-    log_info "[Phase 1]   kubectl port-forward -n bootstrap svc/bootstrap-minio 9000:9000 &"
-    log_info "[Phase 1]   curl http://localhost:9000/minio/health/live    # Test MinIO"
+    log_info "[Phase 1]   kubectl get pods -n storage                      # Check MinIO pods"
+    log_info "[Phase 1]   kubectl get pods -n databases                    # Check PostgreSQL pods"
+    log_info "[Phase 1]   kubectl port-forward -n storage svc/minio 9000:9000 &"
+    log_info "[Phase 1]   curl http://localhost:9000/minio/health/live     # Test MinIO"
     log_info ""
 }
 

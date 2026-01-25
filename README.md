@@ -92,8 +92,10 @@ All tools installed automatically during Phase 0.
 
 ```bash
 kubectl get nodes
-kubectl get pods -n bootstrap
-kubectl get pvc -n bootstrap
+kubectl get pods -n storage      # MinIO pods
+kubectl get pods -n databases    # PostgreSQL pods
+kubectl get pvc -n storage
+kubectl get pvc -n databases
 ```
 
 ## Documentation

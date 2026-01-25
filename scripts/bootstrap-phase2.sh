@@ -30,6 +30,7 @@ smart_import "infra-management/scripts/lib/logging.sh"
 smart_import "infra-management/scripts/lib/system.sh"
 smart_import "infra-management/scripts/lib/network.sh"
 smart_import "infra-management/scripts/lib/credentials.sh"
+smart_import "infra-management/scripts/lib/minio.sh"
 
 # PRIVATE: Parse command-line parameters
 _parse_parameters() {
@@ -161,14 +162,14 @@ _validate_phase2_prerequisites() {
     fi
 
     # Check Phase 1 infrastructure is running
-    if ! kubectl get svc -n bootstrap bootstrap-minio &>/dev/null; then
-        log_error "[Phase 2a] MinIO service not found in bootstrap namespace"
+    if ! kubectl get svc -n storage minio &>/dev/null; then
+        log_error "[Phase 2a] MinIO service not found in storage namespace"
         log_info "Run Phase 1 first: bootstrap-phase1.sh"
         exit 1
     fi
 
-    if ! kubectl get svc -n bootstrap bootstrap-postgresql &>/dev/null; then
-        log_error "[Phase 2a] PostgreSQL service not found in bootstrap namespace"
+    if ! kubectl get svc -n databases postgresql-rw &>/dev/null; then
+        log_error "[Phase 2a] PostgreSQL service not found in databases namespace"
         log_info "Run Phase 1 first: bootstrap-phase1.sh"
         exit 1
     fi
@@ -230,7 +231,7 @@ EOF
 
         # Port-forward to MinIO for migration
         log_info "[Phase 2b] Starting port-forward to MinIO..."
-        kubectl port-forward -n bootstrap svc/bootstrap-minio 9000:9000 &>/dev/null &
+        kubectl port-forward -n storage svc/minio 9000:9000 &>/dev/null &
         MINIO_PF_PID=$!
         sleep 5
 
@@ -340,22 +341,34 @@ _create_flux_sync() {
 }
 
 # PRIVATE: Create Vault storage credentials secret
+# Uses the dedicated vault-user credentials (least privilege: vault-storage bucket only)
 _create_vault_storage_secret() {
     log_info "[Phase 2c] Creating Vault storage credentials secret..."
 
     # Create vault namespace
     kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
 
-    # Create storage credentials secret for Vault S3 backend
+    # Copy vault-minio-credentials from minio namespace to vault namespace
+    # These credentials were created by _create_minio_users with access to vault-storage bucket only
     # Keys are prefixed with AWS_ by Bank-Vaults credentialsConfig (env: AWS_)
     # So ACCESS_KEY_ID becomes AWS_ACCESS_KEY_ID, SECRET_ACCESS_KEY becomes AWS_SECRET_ACCESS_KEY
-    kubectl create secret generic vault-storage-credentials \
-        --namespace=vault \
-        --from-literal=ACCESS_KEY_ID="${TF_VAR_minio_root_user}" \
-        --from-literal=SECRET_ACCESS_KEY="${TF_VAR_minio_root_password}" \
-        --dry-run=client -o yaml | kubectl apply -f -
-
-    log_success "[Phase 2c] Vault storage credentials secret created"
+    if [[ -n "${VAULT_MINIO_ACCESS_KEY:-}" && -n "${VAULT_MINIO_SECRET_KEY:-}" ]]; then
+        kubectl create secret generic vault-storage-credentials \
+            --namespace=vault \
+            --from-literal=ACCESS_KEY_ID="${VAULT_MINIO_ACCESS_KEY}" \
+            --from-literal=SECRET_ACCESS_KEY="${VAULT_MINIO_SECRET_KEY}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        log_success "[Phase 2c] Vault storage credentials secret created (using vault-user)"
+    else
+        # Fallback to root credentials if vault-user not available (backwards compatibility)
+        log_warning "[Phase 2c] vault-user credentials not found, using root credentials"
+        kubectl create secret generic vault-storage-credentials \
+            --namespace=vault \
+            --from-literal=ACCESS_KEY_ID="${TF_VAR_minio_root_user}" \
+            --from-literal=SECRET_ACCESS_KEY="${TF_VAR_minio_root_password}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        log_success "[Phase 2c] Vault storage credentials secret created (using root)"
+    fi
 }
 
 
@@ -576,12 +589,13 @@ main() {
         return 0
     fi
 
-    log_phase "Phase 2b: Bootstrap State Migration"
+    log_phase "Phase 2b: Bootstrap State Migration + MinIO Users"
     _migrate_bootstrap_state
+    _create_minio_users
 
     if [[ "$STOP_AFTER" == "2b" ]]; then
         log_success "Stopped after Phase 2b as requested"
-        log_info "State migration completed. Credentials preserved in memory."
+        log_info "State migration completed. MinIO users created. Credentials preserved in memory."
         return 0
     fi
 
@@ -601,6 +615,7 @@ main() {
     _wait_for_flux_sync
     _validate_vault_ready
     _write_bootstrap_inputs_to_vault
+    _store_minio_creds_in_vault
     _validate_external_secrets_ready
     _store_github_token_in_vault
     _validate_ingress_ready
