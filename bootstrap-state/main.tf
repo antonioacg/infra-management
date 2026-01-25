@@ -137,7 +137,7 @@ resource "helm_release" "cloudnative_pg_operator" {
   wait             = true
   timeout          = 600
 
-  depends_on = [kubernetes_namespace.bootstrap]
+  depends_on = [kubernetes_namespace.databases]
 }
 
 # PostgreSQL cluster for state locking (ARM64 compatible)
