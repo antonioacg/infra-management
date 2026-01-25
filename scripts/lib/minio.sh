@@ -16,9 +16,9 @@ _create_minio_user() {
     access_key=$(openssl rand -hex 16)
     secret_key=$(openssl rand -hex 32)
 
-    # Create policy for bucket access only
+    # Create policy for bucket access only (redirect mc output to stderr)
     log_debug "[MinIO] Creating policy '${username}-policy' for bucket '$bucket'"
-    mc admin policy create minio "${username}-policy" /dev/stdin <<EOF
+    mc admin policy create minio "${username}-policy" /dev/stdin >&2 <<EOF
 {
     "Version": "2012-10-17",
     "Statement": [{
@@ -32,10 +32,10 @@ _create_minio_user() {
 }
 EOF
 
-    # Create user and attach policy
+    # Create user and attach policy (redirect mc output to stderr)
     log_debug "[MinIO] Creating user '$username'"
-    mc admin user add minio "$username" "$access_key" "$secret_key"
-    mc admin policy attach minio "${username}-policy" --user "$username"
+    mc admin user add minio "$username" "$access_key" "$secret_key" >&2
+    mc admin policy attach minio "${username}-policy" --user "$username" >&2
 
     log_success "[MinIO] User '$username' created with bucket '$bucket' access"
     echo "${access_key}:${secret_key}"
