@@ -9,6 +9,7 @@ _create_minio_user() {
     local username="$1"
     local bucket="$2"
     local access_key secret_key
+    local policy_json
 
     log_info "[MinIO] Creating user '$username' with access to bucket '$bucket'..."
 
@@ -16,9 +17,10 @@ _create_minio_user() {
     access_key=$(openssl rand -hex 16)
     secret_key=$(openssl rand -hex 32)
 
-    # Create policy for bucket access only (redirect mc output to stderr)
-    log_debug "[MinIO] Creating policy '${username}-policy' for bucket '$bucket'"
-    mc admin policy create minio "${username}-policy" /dev/stdin >&2 <<EOF
+    log_debug "[MinIO] Generated access_key length: ${#access_key}, secret_key length: ${#secret_key}"
+
+    # Create policy JSON
+    policy_json=$(cat <<POLICY
 {
     "Version": "2012-10-17",
     "Statement": [{
@@ -30,12 +32,29 @@ _create_minio_user() {
         ]
     }]
 }
-EOF
+POLICY
+)
 
-    # Create user and attach policy (redirect mc output to stderr)
-    log_debug "[MinIO] Creating user '$username'"
-    mc admin user add minio "$username" "$access_key" "$secret_key" >&2
-    mc admin policy attach minio "${username}-policy" --user "$username" >&2
+    # Create policy for bucket access only
+    log_debug "[MinIO] Creating policy '${username}-policy' for bucket '$bucket'"
+    echo "$policy_json" | mc admin policy create minio "${username}-policy" /dev/stdin 1>&2 || {
+        log_error "[MinIO] Failed to create policy"
+        return 1
+    }
+
+    # Create user
+    log_debug "[MinIO] Creating user '$username' with generated credentials"
+    if ! mc admin user add minio "${username}" "${access_key}" "${secret_key}" 1>&2; then
+        log_error "[MinIO] Failed to create user '$username'"
+        return 1
+    fi
+
+    # Attach policy to user
+    log_debug "[MinIO] Attaching policy to user '$username'"
+    if ! mc admin policy attach minio "${username}-policy" --user "$username" 1>&2; then
+        log_error "[MinIO] Failed to attach policy to user '$username'"
+        return 1
+    fi
 
     log_success "[MinIO] User '$username' created with bucket '$bucket' access"
     echo "${access_key}:${secret_key}"
@@ -46,9 +65,12 @@ EOF
 _create_minio_users() {
     log_info "[Phase 2b] Creating MinIO users with least privilege..."
 
-    # Setup mc alias using root credentials
+    # Setup mc alias using root credentials (TF_VAR_* set by credentials.sh)
     log_info "[MinIO] Configuring mc alias for MinIO..."
-    mc alias set minio "http://localhost:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --quiet
+    local minio_user="${MINIO_ROOT_USER:-$TF_VAR_minio_root_user}"
+    local minio_pass="${MINIO_ROOT_PASSWORD:-$TF_VAR_minio_root_password}"
+    log_debug "[MinIO] Using MinIO user: ${minio_user:0:8}..."
+    mc alias set minio "http://localhost:9000" "$minio_user" "$minio_pass" --quiet
 
     # Create vault-user (vault-storage bucket only)
     local vault_creds
