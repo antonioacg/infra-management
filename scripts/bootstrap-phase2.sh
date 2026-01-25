@@ -359,6 +359,15 @@ _create_vault_storage_secret() {
             --from-literal=SECRET_ACCESS_KEY="${VAULT_MINIO_SECRET_KEY}" \
             --dry-run=client -o yaml | kubectl apply -f -
         log_success "[Phase 2c] Vault storage credentials secret created (using vault-user)"
+
+        # Also copy to flux-system for tf-controller (shares vault-user credentials)
+        # TODO: Create dedicated tf-user with terraform-state bucket access only (see ISSUES.md)
+        kubectl create secret generic vault-storage-credentials \
+            --namespace=flux-system \
+            --from-literal=ACCESS_KEY_ID="${VAULT_MINIO_ACCESS_KEY}" \
+            --from-literal=SECRET_ACCESS_KEY="${VAULT_MINIO_SECRET_KEY}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        log_success "[Phase 2c] tf-controller credentials secret created in flux-system"
     else
         # Fallback to root credentials if vault-user not available (backwards compatibility)
         log_warning "[Phase 2c] vault-user credentials not found, using root credentials"
@@ -367,7 +376,13 @@ _create_vault_storage_secret() {
             --from-literal=ACCESS_KEY_ID="${TF_VAR_minio_root_user}" \
             --from-literal=SECRET_ACCESS_KEY="${TF_VAR_minio_root_password}" \
             --dry-run=client -o yaml | kubectl apply -f -
-        log_success "[Phase 2c] Vault storage credentials secret created (using root)"
+
+        kubectl create secret generic vault-storage-credentials \
+            --namespace=flux-system \
+            --from-literal=ACCESS_KEY_ID="${TF_VAR_minio_root_user}" \
+            --from-literal=SECRET_ACCESS_KEY="${TF_VAR_minio_root_password}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        log_success "[Phase 2c] Storage credentials secrets created (using root)"
     fi
 }
 
