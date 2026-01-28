@@ -183,6 +183,7 @@ resource "null_resource" "postgresql" {
               name: postgresql-superuser
             postInitSQL:
               - CREATE USER terraform WITH PASSWORD '$TERRAFORM_PASSWORD'
+            postInitApplicationSQL:
               - GRANT CONNECT ON DATABASE terraform_locks TO terraform
               - GRANT USAGE ON SCHEMA public TO terraform
               - GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO terraform
