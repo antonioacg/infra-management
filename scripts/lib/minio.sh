@@ -160,9 +160,10 @@ _vault_kv_put() {
 
     # Run a one-shot pod with vault-secret-writer SA to write the secret
     # The pod authenticates via Kubernetes auth, writes the secret, then exits
+    # Note: Using --overrides to set serviceAccountName (--serviceaccount not available in all kubectl versions)
     if kubectl run "$pod_name" \
         --namespace=vault-jobs \
-        --serviceaccount=vault-secret-writer \
+        --overrides='{"spec":{"serviceAccountName":"vault-secret-writer"}}' \
         --image=hashicorp/vault:1.15 \
         --restart=Never \
         --rm \
