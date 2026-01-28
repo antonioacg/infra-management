@@ -154,3 +154,55 @@ _store_minio_creds_in_vault() {
         fi
     fi
 }
+
+# Store PostgreSQL credentials in Vault (after Vault is ready)
+# Stores: terraform user creds (least privilege for terraform_locks DB)
+_store_postgres_creds_in_vault() {
+    log_info "[Phase 2d] Storing PostgreSQL credentials in Vault..."
+
+    local vault_pod vault_token
+
+    vault_pod=$(kubectl get pods -n vault -l app.kubernetes.io/name=vault \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+    if [[ -z "$vault_pod" ]]; then
+        log_warning "[Phase 2d] Vault pod not found, skipping PostgreSQL credential storage"
+        return 0
+    fi
+
+    vault_token=$(kubectl get secret vault-unseal-keys -n vault \
+        -o jsonpath='{.data.root-token}' 2>/dev/null | base64 -d || echo "")
+
+    if [[ -z "$vault_token" ]]; then
+        log_warning "[Phase 2d] Vault root token not found, skipping PostgreSQL credential storage"
+        return 0
+    fi
+
+    # Store terraform user credentials (for state locking)
+    if [[ -n "${TF_VAR_postgres_terraform_password:-}" ]]; then
+        if kubectl exec -n vault "$vault_pod" -- env \
+            VAULT_TOKEN="$vault_token" \
+            VAULT_SKIP_VERIFY=true \
+            vault kv put secret/infra/postgresql/terraform-user \
+            username="terraform" \
+            password="$TF_VAR_postgres_terraform_password" &>/dev/null; then
+            log_success "[Phase 2d] PostgreSQL terraform-user credentials stored in Vault"
+        else
+            log_warning "[Phase 2d] Failed to store PostgreSQL terraform-user credentials in Vault"
+        fi
+    fi
+
+    # Store superuser credentials (for admin/rotation)
+    if [[ -n "${TF_VAR_postgres_password:-}" ]]; then
+        if kubectl exec -n vault "$vault_pod" -- env \
+            VAULT_TOKEN="$vault_token" \
+            VAULT_SKIP_VERIFY=true \
+            vault kv put secret/infra/postgresql/superuser \
+            username="postgres" \
+            password="$TF_VAR_postgres_password" &>/dev/null; then
+            log_success "[Phase 2d] PostgreSQL superuser credentials stored in Vault"
+        else
+            log_warning "[Phase 2d] Failed to store PostgreSQL superuser credentials in Vault"
+        fi
+    fi
+}

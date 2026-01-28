@@ -159,6 +159,9 @@ resource "null_resource" "postgresql" {
         sleep 2
       done
 
+      # Get terraform user password from secret
+      TERRAFORM_PASSWORD=$(kubectl get secret postgresql-terraform-user -n databases -o jsonpath='{.data.password}' | base64 -d)
+
       # Create PostgreSQL cluster in databases namespace
       cat <<EOF | kubectl apply -f -
       apiVersion: postgresql.cnpg.io/v1
@@ -178,6 +181,12 @@ resource "null_resource" "postgresql" {
             owner: postgres
             secret:
               name: postgresql-superuser
+            postInitSQL:
+              - CREATE USER terraform WITH PASSWORD '$TERRAFORM_PASSWORD'
+              - GRANT CONNECT ON DATABASE terraform_locks TO terraform
+              - GRANT USAGE ON SCHEMA public TO terraform
+              - GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO terraform
+              - ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO terraform
         resources:
           requests:
             memory: 256Mi
@@ -201,7 +210,8 @@ resource "null_resource" "postgresql" {
   depends_on = [
     kubernetes_namespace.databases,
     helm_release.cloudnative_pg_operator,
-    kubernetes_secret.postgresql_superuser
+    kubernetes_secret.postgresql_superuser,
+    kubernetes_secret.postgresql_terraform_user
   ]
 }
 
@@ -215,6 +225,23 @@ resource "kubernetes_secret" "postgresql_superuser" {
   data = {
     username = "postgres"
     password = var.postgres_password
+  }
+
+  type = "kubernetes.io/basic-auth"
+
+  depends_on = [kubernetes_namespace.databases]
+}
+
+# PostgreSQL terraform user secret (least privilege: terraform_locks only)
+resource "kubernetes_secret" "postgresql_terraform_user" {
+  metadata {
+    name      = "postgresql-terraform-user"
+    namespace = "databases"
+  }
+
+  data = {
+    username = "terraform"
+    password = var.postgres_terraform_password
   }
 
   type = "kubernetes.io/basic-auth"

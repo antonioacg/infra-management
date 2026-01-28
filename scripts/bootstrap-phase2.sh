@@ -342,6 +342,7 @@ _create_flux_sync() {
 
 # PRIVATE: Create Vault storage credentials secret
 # Uses the dedicated vault-user credentials (least privilege: vault-storage bucket only)
+# Note: tf-controller gets its credentials via ExternalSecret after Vault is ready
 _create_vault_storage_secret() {
     log_info "[Phase 2c] Creating Vault storage credentials secret..."
 
@@ -359,15 +360,6 @@ _create_vault_storage_secret() {
             --from-literal=SECRET_ACCESS_KEY="${VAULT_MINIO_SECRET_KEY}" \
             --dry-run=client -o yaml | kubectl apply -f -
         log_success "[Phase 2c] Vault storage credentials secret created (using vault-user)"
-
-        # Also copy to flux-system for tf-controller (shares vault-user credentials)
-        # TODO: Create dedicated tf-user with terraform-state bucket access only (see ISSUES.md)
-        kubectl create secret generic vault-storage-credentials \
-            --namespace=flux-system \
-            --from-literal=ACCESS_KEY_ID="${VAULT_MINIO_ACCESS_KEY}" \
-            --from-literal=SECRET_ACCESS_KEY="${VAULT_MINIO_SECRET_KEY}" \
-            --dry-run=client -o yaml | kubectl apply -f -
-        log_success "[Phase 2c] tf-controller credentials secret created in flux-system"
     else
         # Fallback to root credentials if vault-user not available (backwards compatibility)
         log_warning "[Phase 2c] vault-user credentials not found, using root credentials"
@@ -376,13 +368,7 @@ _create_vault_storage_secret() {
             --from-literal=ACCESS_KEY_ID="${TF_VAR_minio_root_user}" \
             --from-literal=SECRET_ACCESS_KEY="${TF_VAR_minio_root_password}" \
             --dry-run=client -o yaml | kubectl apply -f -
-
-        kubectl create secret generic vault-storage-credentials \
-            --namespace=flux-system \
-            --from-literal=ACCESS_KEY_ID="${TF_VAR_minio_root_user}" \
-            --from-literal=SECRET_ACCESS_KEY="${TF_VAR_minio_root_password}" \
-            --dry-run=client -o yaml | kubectl apply -f -
-        log_success "[Phase 2c] Storage credentials secrets created (using root)"
+        log_success "[Phase 2c] Vault storage credentials secret created (using root)"
     fi
 }
 
@@ -631,6 +617,7 @@ main() {
     _validate_vault_ready
     _write_bootstrap_inputs_to_vault
     _store_minio_creds_in_vault
+    _store_postgres_creds_in_vault
     _validate_external_secrets_ready
     _store_github_token_in_vault
     _validate_ingress_ready

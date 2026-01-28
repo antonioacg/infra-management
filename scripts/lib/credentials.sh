@@ -65,7 +65,7 @@ _generate_minio_credentials() {
 _generate_postgresql_credentials() {
     log_info "Generating secure PostgreSQL credentials in-memory..."
 
-    # Generate secure password
+    # Generate secure password for superuser
     _generate_secure_credential 24 "a-zA-Z0-9" POSTGRES_PASSWORD
 
     # Validate minimum length
@@ -76,6 +76,25 @@ _generate_postgresql_credentials() {
 
     # Export for Terraform
     export TF_VAR_postgres_password="$POSTGRES_PASSWORD"
+
+    return 0
+}
+
+# PRIVATE: Generate secure PostgreSQL terraform user credentials in-memory
+_generate_postgresql_terraform_credentials() {
+    log_info "Generating secure PostgreSQL terraform user credentials in-memory..."
+
+    # Generate secure password for terraform user
+    _generate_secure_credential 24 "a-zA-Z0-9" POSTGRES_TERRAFORM_PASSWORD
+
+    # Validate minimum length
+    if [[ ${#POSTGRES_TERRAFORM_PASSWORD} -lt 20 ]]; then
+        log_error "Generated PostgreSQL terraform password too short: ${#POSTGRES_TERRAFORM_PASSWORD} characters"
+        exit 1
+    fi
+
+    # Export for Terraform
+    export TF_VAR_postgres_terraform_password="$POSTGRES_TERRAFORM_PASSWORD"
 
     return 0
 }
@@ -120,7 +139,7 @@ _validate_minio_credentials() {
 
 _validate_postgresql_credentials() {
     _validate_credentials "PostgreSQL" "generate_bootstrap_credentials" \
-        "TF_VAR_postgres_password"
+        "TF_VAR_postgres_password" "TF_VAR_postgres_terraform_password"
 }
 
 # PRIVATE: Individual credential clearing functions
@@ -132,7 +151,8 @@ _clear_minio_credentials() {
 
 _clear_postgresql_credentials() {
     _clear_credentials "PostgreSQL" \
-        "TF_VAR_postgres_password" "POSTGRES_PASSWORD"
+        "TF_VAR_postgres_password" "POSTGRES_PASSWORD" \
+        "TF_VAR_postgres_terraform_password" "POSTGRES_TERRAFORM_PASSWORD"
 }
 
 # Generate all bootstrap credentials (MinIO + PostgreSQL)
@@ -141,6 +161,7 @@ generate_bootstrap_credentials() {
 
     _generate_minio_credentials
     _generate_postgresql_credentials
+    _generate_postgresql_terraform_credentials
 
     log_success "✅ Generated all bootstrap credentials in-memory (no files created)"
     return 0
