@@ -104,6 +104,7 @@ _create_minio_users() {
 }
 
 # Wait for Vault to be ready for credential storage
+# Checks: pod running, Vault unsealed, Kubernetes auth configured
 # Returns 0 if ready, 1 if timeout
 _wait_for_vault() {
     local max_wait="${1:-300}"  # 5 minutes default
@@ -113,31 +114,24 @@ _wait_for_vault() {
     log_info "[Phase 2d] Waiting for Vault to be ready (timeout: ${max_wait}s)..."
 
     while [[ $elapsed -lt $max_wait ]]; do
-        local vault_pod vault_token
+        local vault_pod
 
         vault_pod=$(kubectl get pods -n vault -l app.kubernetes.io/name=vault \
             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
         if [[ -n "$vault_pod" ]]; then
-            # Check if pod is running
-            local phase
-            phase=$(kubectl get pod -n vault "$vault_pod" \
-                -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            # Check if pod is running and ready
+            local ready
+            ready=$(kubectl get pod -n vault "$vault_pod" \
+                -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
 
-            if [[ "$phase" == "Running" ]]; then
-                # Check if Vault is unsealed (root token available)
-                vault_token=$(kubectl get secret vault-unseal-keys -n vault \
-                    -o jsonpath='{.data.root-token}' 2>/dev/null | base64 -d || echo "")
-
-                if [[ -n "$vault_token" ]]; then
-                    # Verify Vault is actually responding
-                    if kubectl exec -n vault "$vault_pod" -- env \
-                        VAULT_TOKEN="$vault_token" \
-                        VAULT_SKIP_VERIFY=true \
-                        vault status &>/dev/null; then
-                        log_success "[Phase 2d] Vault is ready"
-                        return 0
-                    fi
+            if [[ "$ready" == "True" ]]; then
+                # Check Vault is unsealed (status doesn't require auth)
+                if kubectl exec -n vault "$vault_pod" -- env \
+                    VAULT_SKIP_VERIFY=true \
+                    vault status &>/dev/null; then
+                    log_success "[Phase 2d] Vault is ready and unsealed"
+                    return 0
                 fi
             fi
         fi
@@ -151,8 +145,58 @@ _wait_for_vault() {
     return 1
 }
 
+# Write a secret to Vault using Kubernetes auth (vault-secret-writer SA)
+# Usage: _vault_kv_put "secret/path" "key1=value1" "key2=value2" ...
+# Returns 0 on success, 1 on failure
+_vault_kv_put() {
+    local secret_path="$1"
+    shift
+    local kv_pairs="$*"
+
+    local pod_name="vault-writer-$(date +%s)"
+    local vault_addr="https://vault.vault.svc:8200"
+
+    log_debug "[Vault] Writing to ${secret_path} using Kubernetes auth..."
+
+    # Run a one-shot pod with vault-secret-writer SA to write the secret
+    # The pod authenticates via Kubernetes auth, writes the secret, then exits
+    if kubectl run "$pod_name" \
+        --namespace=vault-jobs \
+        --serviceaccount=vault-secret-writer \
+        --image=hashicorp/vault:1.15 \
+        --restart=Never \
+        --rm \
+        --attach \
+        --quiet \
+        --command -- /bin/sh -c "
+            export VAULT_ADDR='${vault_addr}'
+            export VAULT_SKIP_VERIFY=true
+
+            # Authenticate using Kubernetes auth
+            TOKEN=\$(vault write -field=token auth/kubernetes/login \
+                role=secret-writer \
+                jwt=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token))
+
+            if [ -z \"\$TOKEN\" ]; then
+                echo 'Failed to authenticate to Vault' >&2
+                exit 1
+            fi
+
+            export VAULT_TOKEN=\$TOKEN
+
+            # Write the secret
+            vault kv put ${secret_path} ${kv_pairs}
+        " 2>/dev/null; then
+        return 0
+    else
+        # Clean up pod if it failed and wasn't removed
+        kubectl delete pod "$pod_name" -n vault-jobs --ignore-not-found=true &>/dev/null
+        return 1
+    fi
+}
+
 # Store MinIO credentials in Vault (after Vault is ready)
-# Stores: tf-user creds (for tf-controller) and root creds (for admin/rotation)
+# Uses Kubernetes auth via vault-secret-writer service account
 # CRITICAL: Returns non-zero on failure - credentials will be lost if not stored!
 _store_minio_creds_in_vault() {
     log_info "[Phase 2d] Storing MinIO credentials in Vault..."
@@ -164,14 +208,6 @@ _store_minio_creds_in_vault() {
         return 1
     fi
 
-    local vault_pod vault_token
-
-    vault_pod=$(kubectl get pods -n vault -l app.kubernetes.io/name=vault \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-
-    vault_token=$(kubectl get secret vault-unseal-keys -n vault \
-        -o jsonpath='{.data.root-token}' 2>/dev/null | base64 -d)
-
     # Store tf-user credentials (for tf-controller) with retry
     if [[ -n "${TF_MINIO_ACCESS_KEY:-}" && -n "${TF_MINIO_SECRET_KEY:-}" ]]; then
         local max_attempts=3
@@ -179,38 +215,32 @@ _store_minio_creds_in_vault() {
         local stored=false
 
         while [[ $attempt -le $max_attempts && "$stored" == "false" ]]; do
-            if kubectl exec -n vault "$vault_pod" -- env \
-                VAULT_TOKEN="$vault_token" \
-                VAULT_SKIP_VERIFY=true \
-                vault kv put secret/infra/minio/tf-user \
-                access_key="$TF_MINIO_ACCESS_KEY" \
-                secret_key="$TF_MINIO_SECRET_KEY" &>/dev/null; then
-                log_success "[Phase 2d] tf-user credentials stored in Vault"
+            if _vault_kv_put "secret/infra/minio/tf-user" \
+                "access_key=${TF_MINIO_ACCESS_KEY}" \
+                "secret_key=${TF_MINIO_SECRET_KEY}"; then
+                log_success "[Phase 2d] MinIO tf-user credentials stored in Vault"
                 stored=true
             else
-                log_warning "[Phase 2d] tf-user storage attempt $attempt/$max_attempts failed"
+                log_warning "[Phase 2d] MinIO tf-user storage attempt $attempt/$max_attempts failed"
                 ((attempt++))
                 [[ $attempt -le $max_attempts ]] && sleep 5
             fi
         done
 
         if [[ "$stored" == "false" ]]; then
-            log_error "[Phase 2d] Failed to store tf-user credentials after $max_attempts attempts"
+            log_error "[Phase 2d] Failed to store MinIO tf-user credentials after $max_attempts attempts"
             return 1
         fi
     else
-        log_error "[Phase 2d] tf-user credentials not found in environment"
+        log_error "[Phase 2d] MinIO tf-user credentials not found in environment"
         return 1
     fi
 
     # Store root credentials (for admin/rotation) - non-fatal if this fails
     if [[ -n "${MINIO_ROOT_USER:-}" && -n "${MINIO_ROOT_PASSWORD:-}" ]]; then
-        if kubectl exec -n vault "$vault_pod" -- env \
-            VAULT_TOKEN="$vault_token" \
-            VAULT_SKIP_VERIFY=true \
-            vault kv put secret/infra/minio/root \
-            root_user="$MINIO_ROOT_USER" \
-            root_password="$MINIO_ROOT_PASSWORD" &>/dev/null; then
+        if _vault_kv_put "secret/infra/minio/root" \
+            "root_user=${MINIO_ROOT_USER}" \
+            "root_password=${MINIO_ROOT_PASSWORD}"; then
             log_success "[Phase 2d] MinIO root credentials stored in Vault"
         else
             log_warning "[Phase 2d] Failed to store MinIO root credentials"
@@ -219,65 +249,45 @@ _store_minio_creds_in_vault() {
 }
 
 # Store PostgreSQL credentials in Vault (after Vault is ready)
-# Stores: terraform user creds (least privilege for terraform_locks DB)
+# Uses Kubernetes auth via vault-secret-writer service account
 # CRITICAL: Returns non-zero on failure - credentials will be lost if not stored!
 # Note: Called after _store_minio_creds_in_vault, so Vault wait already done
 _store_postgres_creds_in_vault() {
     log_info "[Phase 2d] Storing PostgreSQL credentials in Vault..."
 
-    local vault_pod vault_token
-
-    vault_pod=$(kubectl get pods -n vault -l app.kubernetes.io/name=vault \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-
-    vault_token=$(kubectl get secret vault-unseal-keys -n vault \
-        -o jsonpath='{.data.root-token}' 2>/dev/null | base64 -d)
-
-    # Verify Vault is still accessible (should be after MinIO creds were stored)
-    if [[ -z "$vault_pod" || -z "$vault_token" ]]; then
-        log_error "[Phase 2d] Vault not accessible for PostgreSQL credential storage"
-        return 1
-    fi
-
-    # Store terraform user credentials (for state locking) with retry
-    if [[ -n "${TF_VAR_postgres_terraform_password:-}" ]]; then
+    # Store tf-user credentials (for state locking) with retry
+    if [[ -n "${TF_VAR_postgres_tf_password:-}" ]]; then
         local max_attempts=3
         local attempt=1
         local stored=false
 
         while [[ $attempt -le $max_attempts && "$stored" == "false" ]]; do
-            if kubectl exec -n vault "$vault_pod" -- env \
-                VAULT_TOKEN="$vault_token" \
-                VAULT_SKIP_VERIFY=true \
-                vault kv put secret/infra/postgresql/terraform-user \
-                username="terraform" \
-                password="$TF_VAR_postgres_terraform_password" &>/dev/null; then
-                log_success "[Phase 2d] PostgreSQL terraform-user credentials stored in Vault"
+            if _vault_kv_put "secret/infra/postgresql/tf-user" \
+                "username=tf-user" \
+                "password=${TF_VAR_postgres_tf_password}"; then
+                log_success "[Phase 2d] PostgreSQL tf-user credentials stored in Vault"
                 stored=true
             else
-                log_warning "[Phase 2d] PostgreSQL terraform-user storage attempt $attempt/$max_attempts failed"
+                log_warning "[Phase 2d] PostgreSQL tf-user storage attempt $attempt/$max_attempts failed"
                 ((attempt++))
                 [[ $attempt -le $max_attempts ]] && sleep 5
             fi
         done
 
         if [[ "$stored" == "false" ]]; then
-            log_error "[Phase 2d] Failed to store PostgreSQL terraform-user credentials after $max_attempts attempts"
+            log_error "[Phase 2d] Failed to store PostgreSQL tf-user credentials after $max_attempts attempts"
             return 1
         fi
     else
-        log_error "[Phase 2d] PostgreSQL terraform-user password not found in environment"
+        log_error "[Phase 2d] PostgreSQL tf-user password not found in environment (TF_VAR_postgres_tf_password)"
         return 1
     fi
 
     # Store superuser credentials (for admin/rotation) - non-fatal if this fails
     if [[ -n "${TF_VAR_postgres_password:-}" ]]; then
-        if kubectl exec -n vault "$vault_pod" -- env \
-            VAULT_TOKEN="$vault_token" \
-            VAULT_SKIP_VERIFY=true \
-            vault kv put secret/infra/postgresql/superuser \
-            username="postgres" \
-            password="$TF_VAR_postgres_password" &>/dev/null; then
+        if _vault_kv_put "secret/infra/postgresql/superuser" \
+            "username=postgres" \
+            "password=${TF_VAR_postgres_password}"; then
             log_success "[Phase 2d] PostgreSQL superuser credentials stored in Vault"
         else
             log_warning "[Phase 2d] Failed to store PostgreSQL superuser credentials"
