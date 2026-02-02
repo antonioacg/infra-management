@@ -183,5 +183,7 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
       }
     }
   }
-  depends_on = [kubernetes_namespace.databases, null_resource.postgresql]
+  # Note: Must NOT depend on null_resource.postgresql - the policy must exist
+  # BEFORE PostgreSQL pods start, otherwise initdb jobs can't reach the API
+  depends_on = [kubernetes_namespace.databases]
 }
