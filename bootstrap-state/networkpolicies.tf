@@ -36,8 +36,10 @@ resource "kubernetes_network_policy" "minio_server" {
           match_labels = { "app.kubernetes.io/name" = "vault" }
         }
       }
-      ports { protocol = "TCP"
-        port = "9000" }
+      ports {
+        protocol = "TCP"
+        port     = "9000"
+      }
     }
     # From tf-controller
     ingress {
@@ -46,8 +48,10 @@ resource "kubernetes_network_policy" "minio_server" {
           match_labels = { "kubernetes.io/metadata.name" = "flux-system" }
         }
       }
-      ports { protocol = "TCP"
-        port = "9000" }
+      ports {
+        protocol = "TCP"
+        port     = "9000"
+      }
     }
     # DNS only
     egress {
@@ -56,10 +60,14 @@ resource "kubernetes_network_policy" "minio_server" {
           match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
         }
       }
-      ports { protocol = "UDP"
-        port = "53" }
-      ports { protocol = "TCP"
-        port = "53" }
+      ports {
+        protocol = "UDP"
+        port     = "53"
+      }
+      ports {
+        protocol = "TCP"
+        port     = "53"
+      }
     }
   }
   depends_on = [kubernetes_namespace.storage, helm_release.minio]
@@ -97,8 +105,10 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
           match_labels = { "kubernetes.io/metadata.name" = "flux-system" }
         }
       }
-      ports { protocol = "TCP"
-        port = "5432" }
+      ports {
+        protocol = "TCP"
+        port     = "5432"
+      }
     }
     # From CNPG operator
     ingress {
@@ -107,10 +117,14 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
           match_labels = { "kubernetes.io/metadata.name" = "cnpg-system" }
         }
       }
-      ports { protocol = "TCP"
-        port = "5432" }
-      ports { protocol = "TCP"
-        port = "8000" }
+      ports {
+        protocol = "TCP"
+        port     = "5432"
+      }
+      ports {
+        protocol = "TCP"
+        port     = "8000"
+      }
     }
     # PostgreSQL replication
     ingress {
@@ -119,8 +133,10 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
           match_labels = { "postgresql.cnpg.io/cluster" = "postgresql" }
         }
       }
-      ports { protocol = "TCP"
-        port = "5432" }
+      ports {
+        protocol = "TCP"
+        port     = "5432"
+      }
     }
     # DNS
     egress {
@@ -129,10 +145,14 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
           match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
         }
       }
-      ports { protocol = "UDP"
-        port = "53" }
-      ports { protocol = "TCP"
-        port = "53" }
+      ports {
+        protocol = "UDP"
+        port     = "53"
+      }
+      ports {
+        protocol = "TCP"
+        port     = "53"
+      }
     }
     # Replication egress
     egress {
@@ -141,8 +161,10 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
           match_labels = { "postgresql.cnpg.io/cluster" = "postgresql" }
         }
       }
-      ports { protocol = "TCP"
-        port = "5432" }
+      ports {
+        protocol = "TCP"
+        port     = "5432"
+      }
     }
   }
   depends_on = [kubernetes_namespace.databases, null_resource.postgresql]
