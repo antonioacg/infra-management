@@ -43,6 +43,7 @@ resource "kubernetes_network_policy" "storage_base" {
         namespace_selector {
           match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
         }
+        pod_selector {}
       }
       ports {
         protocol = "UDP"
@@ -90,6 +91,7 @@ resource "kubernetes_network_policy" "minio_server" {
         namespace_selector {
           match_labels = { "kubernetes.io/metadata.name" = "flux-system" }
         }
+        pod_selector {}
       }
       ports {
         protocol = "TCP"
@@ -102,6 +104,7 @@ resource "kubernetes_network_policy" "minio_server" {
         namespace_selector {
           match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
         }
+        pod_selector {}
       }
       ports {
         protocol = "UDP"
@@ -149,6 +152,7 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
         namespace_selector {
           match_labels = { "kubernetes.io/metadata.name" = "flux-system" }
         }
+        pod_selector {}
       }
       ports {
         protocol = "TCP"
@@ -161,6 +165,7 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
         namespace_selector {
           match_labels = { "kubernetes.io/metadata.name" = "cnpg-system" }
         }
+        pod_selector {}
       }
       ports {
         protocol = "TCP"
@@ -189,6 +194,7 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
         namespace_selector {
           match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
         }
+        pod_selector {}
       }
       ports {
         protocol = "UDP"
