@@ -126,6 +126,24 @@ resource "helm_release" "minio" {
         cpu    = "500m"
       }
     }
+    # PSS restricted compliance
+    securityContext = {
+      runAsUser  = 1000
+      runAsGroup = 1000
+      fsGroup    = 1000
+    }
+    containerSecurityContext = {
+      runAsNonRoot             = true
+      runAsUser                = 1000
+      runAsGroup               = 1000
+      allowPrivilegeEscalation = false
+      capabilities = {
+        drop = ["ALL"]
+      }
+      seccompProfile = {
+        type = "RuntimeDefault"
+      }
+    }
   })]
 
   depends_on = [kubernetes_namespace.storage]

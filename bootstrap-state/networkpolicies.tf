@@ -86,7 +86,7 @@ resource "kubernetes_network_policy" "databases_default_deny" {
   depends_on = [kubernetes_namespace.databases]
 }
 
-# PostgreSQL cluster policy
+# PostgreSQL cluster policy (covers all CNPG pods: instances, initdb jobs, etc.)
 resource "kubernetes_network_policy" "postgresql_cluster" {
   metadata {
     name      = "postgresql-cluster"
@@ -94,7 +94,7 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
   }
   spec {
     pod_selector {
-      match_labels = { "postgresql.cnpg.io/cluster" = "postgresql" }
+      match_labels = { "cnpg.io/cluster" = "postgresql" }
     }
     policy_types = ["Ingress", "Egress"]
 
@@ -130,7 +130,7 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
     ingress {
       from {
         pod_selector {
-          match_labels = { "postgresql.cnpg.io/cluster" = "postgresql" }
+          match_labels = { "cnpg.io/cluster" = "postgresql" }
         }
       }
       ports {
@@ -154,11 +154,27 @@ resource "kubernetes_network_policy" "postgresql_cluster" {
         port     = "53"
       }
     }
+    # To Kubernetes API (needed for CNPG initdb/join jobs)
+    egress {
+      to {
+        ip_block {
+          cidr = "0.0.0.0/0"
+        }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "443"
+      }
+      ports {
+        protocol = "TCP"
+        port     = "6443"
+      }
+    }
     # Replication egress
     egress {
       to {
         pod_selector {
-          match_labels = { "postgresql.cnpg.io/cluster" = "postgresql" }
+          match_labels = { "cnpg.io/cluster" = "postgresql" }
         }
       }
       ports {
