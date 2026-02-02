@@ -103,8 +103,12 @@ _cleanup() {
         log_debug "[Phase 1] Orchestrated mode: preserving credentials for Phase 2"
     fi
 
-    # Clean shared temp directory (idempotent)
-    rm -rf "$BOOTSTRAP_TEMP_DIR" 2>/dev/null || true
+    # Clean shared temp directory only if we're not continuing to Phase 2
+    if [[ "$SKIP_VALIDATION" != "true" ]]; then
+        rm -rf "$BOOTSTRAP_TEMP_DIR" 2>/dev/null || true
+    else
+        log_debug "[Phase 1] Orchestrated mode: preserving bootstrap state directory for Phase 2"
+    fi
 
     # Show appropriate message based on exit code
     if [[ $exit_code -eq 130 ]]; then
