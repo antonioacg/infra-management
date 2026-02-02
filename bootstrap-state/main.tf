@@ -39,8 +39,10 @@ resource "kubernetes_namespace" "storage" {
   metadata {
     name = "storage"
     labels = {
-      "app.kubernetes.io/managed-by" = "terraform"
-      "purpose"                      = "storage-services"
+      "app.kubernetes.io/managed-by"               = "terraform"
+      "purpose"                                    = "storage-services"
+      "pod-security.kubernetes.io/enforce"         = "restricted"
+      "pod-security.kubernetes.io/enforce-version" = "latest"
     }
   }
 }
@@ -49,8 +51,10 @@ resource "kubernetes_namespace" "databases" {
   metadata {
     name = "databases"
     labels = {
-      "app.kubernetes.io/managed-by" = "terraform"
-      "purpose"                      = "database-services"
+      "app.kubernetes.io/managed-by"               = "terraform"
+      "purpose"                                    = "database-services"
+      "pod-security.kubernetes.io/enforce"         = "restricted"
+      "pod-security.kubernetes.io/enforce-version" = "latest"
     }
   }
 }
@@ -59,8 +63,10 @@ resource "kubernetes_namespace" "minio" {
   metadata {
     name = "minio"
     labels = {
-      "app.kubernetes.io/managed-by" = "terraform"
-      "purpose"                      = "minio-admin"
+      "app.kubernetes.io/managed-by"               = "terraform"
+      "purpose"                                    = "minio-admin"
+      "pod-security.kubernetes.io/enforce"         = "restricted"
+      "pod-security.kubernetes.io/enforce-version" = "latest"
     }
     annotations = {
       "description" = "Admin-only namespace for Vault's MinIO credentials (chicken-egg resolution)"
@@ -136,6 +142,19 @@ resource "helm_release" "cloudnative_pg_operator" {
   create_namespace = true
   wait             = true
   timeout          = 600
+
+  values = [yamlencode({
+    resources = {
+      requests = {
+        cpu    = "100m"
+        memory = "128Mi"
+      }
+      limits = {
+        cpu    = "500m"
+        memory = "256Mi"
+      }
+    }
+  })]
 
   depends_on = [kubernetes_namespace.databases]
 }
