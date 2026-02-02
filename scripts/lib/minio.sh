@@ -130,8 +130,18 @@ _wait_for_vault() {
                 if kubectl exec -n vault "$vault_pod" -- env \
                     VAULT_SKIP_VERIFY=true \
                     vault status &>/dev/null; then
-                    log_success "[Phase 2d] Vault is ready and unsealed"
-                    return 0
+                    # Also check that Kubernetes auth is configured (by vault-configurer)
+                    # This is critical - vault-configurer runs async and we need auth ready
+                    if kubectl exec -n vault "$vault_pod" -- env \
+                        VAULT_SKIP_VERIFY=true \
+                        vault auth list 2>/dev/null | grep -q "kubernetes/"; then
+                        log_success "[Phase 2d] Vault is ready and unsealed"
+                        # Small delay to ensure vault-configurer has finished all config
+                        sleep 5
+                        return 0
+                    else
+                        log_debug "[Phase 2d] Vault unsealed but Kubernetes auth not configured yet"
+                    fi
                 fi
             fi
         fi
