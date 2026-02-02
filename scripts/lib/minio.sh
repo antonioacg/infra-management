@@ -130,17 +130,23 @@ _wait_for_vault() {
                 if kubectl exec -n vault "$vault_pod" -- env \
                     VAULT_SKIP_VERIFY=true \
                     vault status &>/dev/null; then
-                    # Also check that Kubernetes auth is configured (by vault-configurer)
+                    # Also check that vault-configurer has finished configuring auth
                     # This is critical - vault-configurer runs async and we need auth ready
-                    if kubectl exec -n vault "$vault_pod" -- env \
-                        VAULT_SKIP_VERIFY=true \
-                        vault auth list 2>/dev/null | grep -q "kubernetes/"; then
-                        log_success "[Phase 2d] Vault is ready and unsealed"
-                        # Small delay to ensure vault-configurer has finished all config
-                        sleep 5
-                        return 0
+                    # Check vault-configurer logs for success message
+                    local configurer_pod
+                    configurer_pod=$(kubectl get pods -n vault -l app.kubernetes.io/name=vault-configurator \
+                        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+                    if [[ -n "$configurer_pod" ]]; then
+                        if kubectl logs -n vault "$configurer_pod" 2>/dev/null | grep -q "successfully configured vault"; then
+                            log_success "[Phase 2d] Vault is ready and unsealed"
+                            # Small delay to ensure all config is applied
+                            sleep 5
+                            return 0
+                        else
+                            log_debug "[Phase 2d] Vault unsealed but vault-configurer not finished yet"
+                        fi
                     else
-                        log_debug "[Phase 2d] Vault unsealed but Kubernetes auth not configured yet"
+                        log_debug "[Phase 2d] Vault unsealed but vault-configurer pod not found"
                     fi
                 fi
             fi
