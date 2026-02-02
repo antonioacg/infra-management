@@ -14,6 +14,49 @@ resource "kubernetes_network_policy" "storage_default_deny" {
   depends_on = [kubernetes_namespace.storage]
 }
 
+# Storage namespace base policy - allows DNS and intra-namespace traffic
+# Needed for MinIO post-job to reach MinIO server and DNS
+resource "kubernetes_network_policy" "storage_base" {
+  metadata {
+    name      = "storage-base"
+    namespace = "storage"
+  }
+  spec {
+    pod_selector {}  # Applies to all pods in namespace
+    policy_types = ["Ingress", "Egress"]
+
+    # Allow intra-namespace ingress
+    ingress {
+      from {
+        pod_selector {}  # From any pod in same namespace
+      }
+    }
+    # Allow intra-namespace egress
+    egress {
+      to {
+        pod_selector {}  # To any pod in same namespace
+      }
+    }
+    # DNS egress
+    egress {
+      to {
+        namespace_selector {
+          match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
+        }
+      }
+      ports {
+        protocol = "UDP"
+        port     = "53"
+      }
+      ports {
+        protocol = "TCP"
+        port     = "53"
+      }
+    }
+  }
+  depends_on = [kubernetes_namespace.storage]
+}
+
 # MinIO server policy
 resource "kubernetes_network_policy" "minio_server" {
   metadata {
@@ -70,7 +113,9 @@ resource "kubernetes_network_policy" "minio_server" {
       }
     }
   }
-  depends_on = [kubernetes_namespace.storage, helm_release.minio]
+  # Note: Must NOT depend on helm_release.minio - the policy must exist
+  # BEFORE MinIO post-job pods start, otherwise they can't reach MinIO/DNS
+  depends_on = [kubernetes_namespace.storage]
 }
 
 # Databases namespace - default deny
