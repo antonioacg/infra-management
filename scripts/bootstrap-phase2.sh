@@ -593,17 +593,20 @@ main() {
     _store_minio_creds_in_vault || {
         log_error "FATAL: Failed to store MinIO credentials in Vault"
         log_error "Credentials will be lost when script exits"
+        _stop_vault_writer
         exit 1
     }
 
     _store_postgres_creds_in_vault || {
         log_error "FATAL: Failed to store PostgreSQL credentials in Vault"
         log_error "Credentials will be lost when script exits"
+        _stop_vault_writer
         exit 1
     }
 
     _validate_external_secrets_ready
     _store_github_token_in_vault
+    _stop_vault_writer
     _validate_ingress_ready
     _show_flux_status
 

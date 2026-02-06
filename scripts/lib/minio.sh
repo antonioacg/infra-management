@@ -161,53 +161,96 @@ _wait_for_vault() {
     return 1
 }
 
-# Write a secret to Vault using Kubernetes auth (vault-secret-writer SA)
+# Vault writer pod management
+# Uses a single persistent pod for all credential writes to avoid
+# NetworkPolicy ipset race conditions with ephemeral pods
+VAULT_WRITER_POD="vault-writer-persistent"
+VAULT_WRITER_READY=false
+
+# Start a persistent Vault writer pod in vault-jobs namespace
+# The pod authenticates once and stays alive for multiple writes
+_start_vault_writer() {
+    local vault_addr="https://vault.vault.svc:8200"
+
+    log_debug "[Vault] Starting persistent writer pod..."
+
+    # Clean up any leftover pod from a previous run
+    kubectl delete pod "$VAULT_WRITER_POD" -n vault-jobs --ignore-not-found=true &>/dev/null
+
+    # Create a long-running pod that sleeps, waiting for exec commands
+    kubectl run "$VAULT_WRITER_POD" \
+        --namespace=vault-jobs \
+        --overrides='{"spec":{"serviceAccountName":"vault-secret-writer"}}' \
+        --image=hashicorp/vault:1.15 \
+        --restart=Never \
+        --command -- /bin/sh -c "sleep 600" &>/dev/null
+
+    # Wait for the pod to be ready
+    if ! kubectl wait --for=condition=Ready pod/"$VAULT_WRITER_POD" -n vault-jobs --timeout=60s &>/dev/null; then
+        log_error "[Vault] Writer pod failed to start"
+        kubectl delete pod "$VAULT_WRITER_POD" -n vault-jobs --ignore-not-found=true &>/dev/null
+        return 1
+    fi
+
+    # Wait for NetworkPolicy ipsets to include the new pod
+    sleep 3
+
+    # Authenticate and store token in a file inside the pod
+    if ! kubectl exec "$VAULT_WRITER_POD" -n vault-jobs -- /bin/sh -c "
+        export VAULT_ADDR='${vault_addr}'
+        export VAULT_SKIP_VERIFY=true
+        TOKEN=\$(vault write -field=token auth/kubernetes/login \
+            role=secret-writer \
+            jwt=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token))
+        if [ -z \"\$TOKEN\" ]; then
+            echo 'Failed to authenticate to Vault' >&2
+            exit 1
+        fi
+        echo \"\$TOKEN\" > /tmp/vault-token
+    " 2>/dev/null; then
+        log_error "[Vault] Writer pod failed to authenticate"
+        kubectl delete pod "$VAULT_WRITER_POD" -n vault-jobs --ignore-not-found=true &>/dev/null
+        return 1
+    fi
+
+    VAULT_WRITER_READY=true
+    log_debug "[Vault] Writer pod ready and authenticated"
+    return 0
+}
+
+# Stop and clean up the persistent Vault writer pod
+_stop_vault_writer() {
+    kubectl delete pod "$VAULT_WRITER_POD" -n vault-jobs --ignore-not-found=true &>/dev/null
+    VAULT_WRITER_READY=false
+}
+
+# Write a secret to Vault using the persistent writer pod
 # Usage: _vault_kv_put "secret/path" "key1=value1" "key2=value2" ...
 # Returns 0 on success, 1 on failure
 _vault_kv_put() {
     local secret_path="$1"
     shift
     local kv_pairs="$*"
-
-    local pod_name="vault-writer-$(date +%s)"
     local vault_addr="https://vault.vault.svc:8200"
 
     log_debug "[Vault] Writing to ${secret_path} using Kubernetes auth..."
 
-    # Run a one-shot pod with vault-secret-writer SA to write the secret
-    # The pod authenticates via Kubernetes auth, writes the secret, then exits
-    # Note: Using --overrides to set serviceAccountName (--serviceaccount not available in all kubectl versions)
-    if kubectl run "$pod_name" \
-        --namespace=vault-jobs \
-        --overrides='{"spec":{"serviceAccountName":"vault-secret-writer"}}' \
-        --image=hashicorp/vault:1.15 \
-        --restart=Never \
-        --rm \
-        --attach \
-        --quiet \
-        --command -- /bin/sh -c "
-            export VAULT_ADDR='${vault_addr}'
-            export VAULT_SKIP_VERIFY=true
+    # Start writer pod if not already running
+    if [[ "$VAULT_WRITER_READY" != "true" ]]; then
+        if ! _start_vault_writer; then
+            return 1
+        fi
+    fi
 
-            # Authenticate using Kubernetes auth
-            TOKEN=\$(vault write -field=token auth/kubernetes/login \
-                role=secret-writer \
-                jwt=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token))
-
-            if [ -z \"\$TOKEN\" ]; then
-                echo 'Failed to authenticate to Vault' >&2
-                exit 1
-            fi
-
-            export VAULT_TOKEN=\$TOKEN
-
-            # Write the secret
-            vault kv put ${secret_path} ${kv_pairs}
-        " 2>/dev/null; then
+    # Execute the write command in the persistent pod
+    if kubectl exec "$VAULT_WRITER_POD" -n vault-jobs -- /bin/sh -c "
+        export VAULT_ADDR='${vault_addr}'
+        export VAULT_SKIP_VERIFY=true
+        export VAULT_TOKEN=\$(cat /tmp/vault-token)
+        vault kv put ${secret_path} ${kv_pairs}
+    " 2>/dev/null; then
         return 0
     else
-        # Clean up pod if it failed and wasn't removed
-        kubectl delete pod "$pod_name" -n vault-jobs --ignore-not-found=true &>/dev/null
         return 1
     fi
 }
