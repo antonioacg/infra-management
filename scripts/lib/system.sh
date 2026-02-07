@@ -49,15 +49,17 @@ detect_system_architecture() {
 
     log_info "Detecting system architecture..."
 
-    local arch=$(uname -m)
-    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local arch
+    arch=$(uname -m)
+    local os
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
 
     case "$arch" in
         x86_64) DETECTED_ARCH="amd64" ;;
         arm64|aarch64) DETECTED_ARCH="arm64" ;;
         *)
             log_error "Unsupported architecture: $arch"
-            exit 1
+            return 1
             ;;
     esac
 
@@ -66,7 +68,7 @@ detect_system_architecture() {
         darwin) DETECTED_OS="darwin" ;;
         *)
             log_error "Unsupported operating system: $os"
-            exit 1
+            return 1
             ;;
     esac
 

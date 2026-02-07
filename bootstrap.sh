@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Enterprise-Ready Platform Bootstrap
 # Single-command orchestrator that calls individual phase scripts
@@ -124,7 +124,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate GitHub token
-if [[ -z "$GITHUB_TOKEN" ]]; then
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
     log_error "GITHUB_TOKEN environment variable required"
     echo ""
     echo "Run: $0 --help for usage information"

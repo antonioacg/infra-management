@@ -17,12 +17,12 @@ _generate_secure_credential() {
         value=$(cat /dev/urandom | LC_ALL=C tr -dc "$pattern" | fold -w "$length" | head -n 1)
     else
         log_error "Cannot generate secure credentials: no entropy source available"
-        exit 1
+        return 1
     fi
 
     if [[ -z "$value" || ${#value} -lt "$length" ]]; then
         log_error "Failed to generate credential of length $length"
-        exit 1
+        return 1
     fi
 
     # Add prefix if provided
@@ -46,12 +46,12 @@ _generate_minio_credentials() {
     # Validate credentials format
     if [[ ! "$MINIO_ROOT_USER" =~ ^admin-[a-f0-9]{8}$ ]]; then
         log_error "Generated root user has invalid format: $MINIO_ROOT_USER"
-        exit 1
+        return 1
     fi
 
     if [[ ${#MINIO_ROOT_PASSWORD} -lt 20 ]]; then
         log_error "Generated root password too short: ${#MINIO_ROOT_PASSWORD} characters"
-        exit 1
+        return 1
     fi
 
     # Export for Terraform
@@ -71,7 +71,7 @@ _generate_postgresql_credentials() {
     # Validate minimum length
     if [[ ${#POSTGRES_PASSWORD} -lt 20 ]]; then
         log_error "Generated PostgreSQL password too short: ${#POSTGRES_PASSWORD} characters"
-        exit 1
+        return 1
     fi
 
     # Export for Terraform
@@ -90,7 +90,7 @@ _generate_postgresql_tf_credentials() {
     # Validate minimum length
     if [[ ${#POSTGRES_TF_PASSWORD} -lt 20 ]]; then
         log_error "Generated PostgreSQL tf-user password too short: ${#POSTGRES_TF_PASSWORD} characters"
-        exit 1
+        return 1
     fi
 
     # Export for Terraform
@@ -114,7 +114,7 @@ _validate_credentials() {
     if [[ ${#missing_vars[@]} -gt 0 ]]; then
         log_error "Missing $service_name credential variables: ${missing_vars[*]}"
         log_error "Run $generator_func() before deploying"
-        exit 1
+        return 1
     fi
 
     return 0

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Enterprise-Ready Platform Bootstrap - Phase 1 Testing
 # Tests ONLY: k3s cluster + MinIO + PostgreSQL bootstrap storage with LOCAL state
@@ -141,7 +141,7 @@ _validate_environment() {
     log_info "[Phase 1a] Validating environment and prerequisites..."
 
     # Check GitHub token (allow "test" for Phase 1 testing)
-    if [[ -z "$GITHUB_TOKEN" ]]; then
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
         log_error "[Phase 1a] ❌ GITHUB_TOKEN environment variable required"
         echo ""
         echo "Run: $0 --help for usage information"
@@ -293,7 +293,8 @@ _validate_kubectl_context() {
     local expected_context="$1"
     log_trace "[Phase 1b] Validating kubectl context setup..."
 
-    local current_context=$(kubectl config current-context 2>/dev/null || echo "NONE")
+    local current_context
+    current_context=$(kubectl config current-context 2>/dev/null || echo "NONE")
     if [[ "$current_context" != "$expected_context" ]]; then
         log_error "[Phase 1b] Context mismatch. Expected: $expected_context, Got: $current_context"
         log_debug "[Phase 1b] Available contexts: $(kubectl config get-contexts -o name 2>/dev/null | tr '\n' ' ' || echo 'none')"
@@ -332,7 +333,8 @@ _setup_kubectl_config() {
         # Transform k3s config in memory using process substitution
         # This avoids any temp files on disk
         # Note: sudo required because k3s.yaml has 600 permissions (root-only, secure by default)
-        local transformed_config=$(sudo cat /etc/rancher/k3s/k3s.yaml | \
+        local transformed_config
+        transformed_config=$(sudo cat /etc/rancher/k3s/k3s.yaml | \
             yq eval '.contexts[0].name = "'$context_name'"' | \
             yq eval '.contexts[0].context.cluster = "'$cluster_name'"' | \
             yq eval '.contexts[0].context.user = "'$user_name'"' | \
@@ -381,7 +383,8 @@ _setup_kubectl_config() {
     fi
 
     # Verify final permissions are secure (600 - owner read/write only)
-    local final_perms=$(stat -c '%a' ~/.kube/config 2>/dev/null || stat -f '%A' ~/.kube/config 2>/dev/null)
+    local final_perms
+    final_perms=$(stat -c '%a' ~/.kube/config 2>/dev/null || stat -f '%A' ~/.kube/config 2>/dev/null)
     if [[ "$final_perms" == "600" ]]; then
         log_debug "[Phase 1b] kubeconfig permissions verified: $final_perms (secure)"
     else
@@ -406,7 +409,8 @@ _generate_etcd_encryption_config() {
         log_info "[Phase 1b] etcd encryption configuration already exists, verifying permissions..."
 
         # Check current permissions
-        local current_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
+        local current_perms
+        current_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
         log_debug "[Phase 1b] Current permissions: $current_perms"
 
         # Ensure correct permissions (600) and ownership (root:root)
@@ -414,7 +418,8 @@ _generate_etcd_encryption_config() {
         sudo chown root:root "$encryption_config_file"
 
         # Verify permissions were set correctly
-        local new_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
+        local new_perms
+        new_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
         if [[ "$new_perms" == "600" ]]; then
             log_success "[Phase 1b] ✅ etcd encryption configuration exists with correct permissions"
         else
@@ -430,7 +435,8 @@ _generate_etcd_encryption_config() {
 
     # Generate random encryption key (32 bytes = 256 bits, base64 encoded)
     log_info "[Phase 1b] Generating encryption key..."
-    local encryption_key=$(openssl rand -base64 32)
+    local encryption_key
+    encryption_key=$(openssl rand -base64 32)
 
     # Create EncryptionConfiguration
     log_info "[Phase 1b] Writing encryption configuration..."
@@ -470,7 +476,8 @@ EOF
 
     # Verify file was created successfully and permissions are correct
     if [[ -f "$encryption_config_file" ]]; then
-        local final_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
+        local final_perms
+        final_perms=$(stat -c '%a' "$encryption_config_file" 2>/dev/null || stat -f '%A' "$encryption_config_file" 2>/dev/null)
 
         if [[ "$final_perms" == "600" ]]; then
             log_success "[Phase 1b] ✅ etcd encryption configuration generated with correct permissions"
@@ -574,7 +581,8 @@ _install_k3s() {
 
         if [[ $retry_count -eq 1 ]] || [[ $((retry_count % 5)) -eq 0 ]]; then
             # Show detailed error info on first attempt and every 5th attempt
-            local kubectl_error=$(kubectl get nodes 2>&1)
+            local kubectl_error
+            kubectl_error=$(kubectl get nodes 2>&1)
             log_debug "[Phase 1b] kubectl error (attempt $retry_count): $kubectl_error"
         fi
 
@@ -609,8 +617,10 @@ _validate_cluster() {
     _verify_etcd_encryption
 
     # Show cluster info
-    local node_count=$(kubectl get nodes --no-headers | wc -l)
-    local cluster_version=$(kubectl version --short --client 2>/dev/null | grep 'Client Version' | cut -d' ' -f3 || echo "unknown")
+    local node_count
+    node_count=$(kubectl get nodes --no-headers | wc -l)
+    local cluster_version
+    cluster_version=$(kubectl version --short --client 2>/dev/null | grep 'Client Version' | cut -d' ' -f3 || echo "unknown")
 
     log_success "[Phase 1b] ✅ Cluster validation complete"
     log_info "[Phase 1b]   • Nodes: $node_count"
@@ -630,7 +640,8 @@ _verify_etcd_encryption() {
     fi
 
     # Verify file permissions are secure (600)
-    local perms=$(stat -c '%a' "$encryption_config" 2>/dev/null || stat -f '%A' "$encryption_config" 2>/dev/null)
+    local perms
+    perms=$(stat -c '%a' "$encryption_config" 2>/dev/null || stat -f '%A' "$encryption_config" 2>/dev/null)
     if [[ "$perms" != "600" ]]; then
         log_warning "[Phase 1b] ⚠️  Encryption config permissions: $perms (expected: 600)"
     fi
@@ -834,7 +845,7 @@ _verify_bootstrap_foundation() {
 
     # Test connectivity with local mc client
     if command -v mc >/dev/null 2>&1; then
-        if mc alias set phase1-test http://localhost:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" >/dev/null 2>&1; then
+        if mc alias set phase1-test http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; then
             log_success "[Phase 1c] ✅ MinIO S3 connectivity verified"
             mc alias remove phase1-test >/dev/null 2>&1
         else

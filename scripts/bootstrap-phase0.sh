@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Enterprise-Ready Platform Bootstrap - Phase 0 Testing
 # Tests ONLY: environment validation, architecture detection, and tool installation
@@ -96,7 +96,7 @@ _validate_environment() {
     log_info "[Phase 0a] Validating environment and prerequisites..."
 
     # Check GitHub token (allow "test" for Phase 0 testing)
-    if [[ -z "$GITHUB_TOKEN" ]]; then
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
         log_error "[Phase 0a] ❌ GITHUB_TOKEN environment variable required"
         echo ""
         echo "Run: $0 --help for usage information"
