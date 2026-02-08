@@ -126,7 +126,7 @@ log_trace() {
 print_banner() {
     local title="$1"
     local subtitle="$2"
-    local info="$3"
+    local info="${3:-}"
     local width=$((BANNER_WIDTH - 2))  # Account for border characters
 
     echo -e "${GREEN}"
