@@ -551,6 +551,22 @@ main() {
         _parse_parameters "$@"
     fi
 
+    # Validate parameters (fail fast before any work begins)
+    if [[ ! "$NODE_COUNT" =~ ^[0-9]+$ ]] || [[ "$NODE_COUNT" -lt 1 ]]; then
+        log_error "Node count must be a positive integer (got: '$NODE_COUNT')"
+        exit 1
+    fi
+
+    if [[ ! "$RESOURCE_TIER" =~ ^(small|medium|large)$ ]]; then
+        log_error "Resource tier must be 'small', 'medium', or 'large' (got: '$RESOURCE_TIER')"
+        exit 1
+    fi
+
+    if [[ -n "$STOP_AFTER" ]] && [[ ! "$STOP_AFTER" =~ ^2[a-d]$ ]]; then
+        log_error "Stop after must be 2a, 2b, 2c, or 2d (got: '$STOP_AFTER')"
+        exit 1
+    fi
+
     print_banner "Phase 2: State Migration + Flux GitOps" "Remote-first enterprise deployment" "Environment: $ENVIRONMENT, Resources: $NODE_COUNT nodes, $RESOURCE_TIER tier"
 
     log_phase "Phase 2a: Prerequisites & Validation"
