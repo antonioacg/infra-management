@@ -349,8 +349,8 @@ _create_vault_storage_secret() {
     # Create vault namespace
     kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
 
-    # Copy vault-minio-credentials from minio namespace to vault namespace
-    # These credentials were created by _create_minio_users with access to vault-storage bucket only
+    # Create vault-storage-credentials from env vars set by _create_minio_users
+    # These credentials were created with access to vault-storage bucket only
     # Keys are prefixed with AWS_ by Bank-Vaults credentialsConfig (env: AWS_)
     # So ACCESS_KEY_ID becomes AWS_ACCESS_KEY_ID, SECRET_ACCESS_KEY becomes AWS_SECRET_ACCESS_KEY
     if [[ -n "${VAULT_MINIO_ACCESS_KEY:-}" && -n "${VAULT_MINIO_SECRET_KEY:-}" ]]; then
@@ -444,11 +444,11 @@ _validate_external_secrets_ready() {
         log_success "[Phase 2d] External Secrets operator is ready"
     fi
 
-    # Check ClusterSecretStore
-    if kubectl get clustersecretstore vault-backend &>/dev/null; then
-        log_success "[Phase 2d] ClusterSecretStore vault-backend exists"
+    # Check namespace-scoped SecretStore
+    if kubectl get secretstore vault-backend -n flux-system &>/dev/null; then
+        log_success "[Phase 2d] SecretStore vault-backend exists in flux-system"
     else
-        log_warning "[Phase 2d] ClusterSecretStore not found yet"
+        log_warning "[Phase 2d] SecretStore not found in flux-system yet"
         log_info "[Phase 2d] This will be created by Flux"
     fi
 }
@@ -464,35 +464,32 @@ _store_github_token_in_vault() {
     fi
 
     # Store GitHub token using Kubernetes auth (non-fatal if fails - bootstrap already created k8s secret)
-    if _vault_kv_put "secret/flux/git-auth" \
+    if _vault_kv_put "secret/flux-system/git-auth" \
         "username=git" \
         "password=${GITHUB_TOKEN}"; then
-        log_success "[Phase 2d] GitHub token stored in Vault at secret/flux/git-auth"
+        log_success "[Phase 2d] GitHub token stored in Vault at secret/flux-system/git-auth"
     else
         log_warning "[Phase 2d] Failed to store GitHub token in Vault"
         log_info "[Phase 2d] ExternalSecret will use the bootstrap-created flux-git-auth secret"
     fi
 }
 
-# PRIVATE: Write bootstrap inputs to Vault
+# PRIVATE: Write user-provided secrets to Vault
+# Uses VAULT_SECRET_* convention — secrets go directly to their final destination
 # Uses Kubernetes auth via vault-secret-writer service account
-_write_bootstrap_inputs_to_vault() {
-    log_info "[Phase 2d] Writing bootstrap inputs to Vault..."
-
-    local vault_args
-    vault_args=$(_collect_vault_input_secrets)
-
-    if [[ -n "$vault_args" ]]; then
-        log_info "[Phase 2d] Writing env vars matching VAULT_INPUT_* to secret/bootstrap/inputs..."
-        # shellcheck disable=SC2086
-        if _vault_kv_put "secret/bootstrap/inputs" $vault_args; then
-            log_success "[Phase 2d] Bootstrap inputs written to Vault"
+_write_vault_secrets() {
+    log_info "[Phase 2d] Writing user-provided secrets to Vault..."
+    local count=0
+    while IFS=' ' read -r path kv_pair; do
+        if _vault_kv_put "secret/${path}" "$kv_pair"; then
+            log_success "[Phase 2d] Written to secret/${path}"
+            ((count++))
         else
-            log_warning "[Phase 2d] Failed to write bootstrap inputs to Vault"
+            log_warning "[Phase 2d] Failed to write secret/${path}"
         fi
-    else
-        log_debug "[Phase 2d] No VAULT_INPUT_* variables found, skipping"
-    fi
+    done < <(_collect_vault_secrets)
+    [[ $count -gt 0 ]] && log_success "[Phase 2d] Wrote $count user-provided secrets" \
+                       || log_debug "[Phase 2d] No VAULT_SECRET_* variables found"
 }
 
 # PRIVATE: Validate ingress-nginx is ready
@@ -603,7 +600,7 @@ main() {
     log_phase "Phase 2d: Validation"
     _wait_for_flux_sync
     _validate_vault_ready
-    _write_bootstrap_inputs_to_vault
+    _write_vault_secrets
 
     # Store credentials in Vault (MUST succeed - credentials are in-memory only)
     _store_minio_creds_in_vault || {

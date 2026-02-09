@@ -21,41 +21,54 @@ See [BOOTSTRAP.md](BOOTSTRAP.md) for complete details.
 
 ## User-Provided Secrets
 
-Some secrets cannot be generated automatically and must be provided during bootstrap or added later.
+Some secrets cannot be generated automatically and must be provided during bootstrap or added later. Secrets go directly to their final Vault destination — no staging area.
+
+### Convention
+
+Environment variable name encodes the Vault path using double underscores (`__`) as path separators:
+```
+VAULT_SECRET_<namespace>__<path>=<value>
+```
+
+Example: `VAULT_SECRET_production__cloudflare__token=xxx` writes to `secret/production/cloudflare/token` with key `token`.
+
+Valid namespace prefixes: `flux-system/`, `production/`, `bootstrap/`.
 
 ### Bootstrap Time (Recommended)
 
-Pass secrets as environment variables prefixed with `VAULT_INPUT_`:
-
 ```bash
 GITHUB_TOKEN=xxx \
-VAULT_INPUT_github_token=xxx \
-VAULT_INPUT_cloudflare_token=yyy \
-./bootstrap.sh
+VAULT_SECRET_production__cloudflare__token=yyy \
+./bootstrap.sh --nodes=1 --tier=small
 ```
+
+`GITHUB_TOKEN` is handled explicitly by bootstrap (written to `secret/flux-system/git-auth`). All other secrets use the `VAULT_SECRET_*` convention.
 
 ### Post-Bootstrap (GitHub Actions)
 
 Use the "Add Secret to Vault" workflow in the `infra-management` repo:
 1. Add secret to GitHub Repo Settings -> Secrets (e.g. `CLOUDFLARE_TOKEN`)
-2. Run "Add Secret to Vault" workflow
-3. Select secret name from list (e.g. `cloudflare_token`)
+2. Run "Add Secret to Vault" workflow with:
+   - `vault_path`: `production/cloudflare/token`
+   - `key_name`: `token`
+   - `github_secret`: `CLOUDFLARE_TOKEN`
+3. (One-time) Add `CLOUDFLARE_TOKEN` to the workflow's `github_secret` options and case mapping
 
 ### Manual (Emergency)
 
 ```bash
 kubectl port-forward -n vault svc/vault 8200:8200 &
 export VAULT_ADDR=http://127.0.0.1:8200
-vault kv patch secret/bootstrap/inputs cloudflare_token=xxx
+vault kv put secret/production/cloudflare/token token=xxx
 ```
 
 ### Required Secrets
 
-| Secret Name | Variable Name | Description | Source |
-|-------------|---------------|-------------|--------|
-| `github_token` | `VAULT_INPUT_github_token` | PAT for Renovate/Flux | GitHub Settings |
-| `cloudflare_token` | `VAULT_INPUT_cloudflare_token` | API Token for Cloudflared | Cloudflare Dashboard |
-| `datadog_api_key` | `VAULT_INPUT_datadog_api_key` | API Key for Datadog Agent | Datadog Dashboard |
+| Vault Path | Bootstrap Variable | Description | Source |
+|------------|-------------------|-------------|--------|
+| `flux-system/git-auth` | `GITHUB_TOKEN` (explicit) | PAT for Renovate/Flux | GitHub Settings |
+| `production/cloudflare/token` | `VAULT_SECRET_production__cloudflare__token` | API Token for Cloudflared | Cloudflare Dashboard |
+| `production/datadog/api_key` | `VAULT_SECRET_production__datadog__api_key` | API Key for Datadog Agent | Datadog Dashboard |
 
 ## Platform Repositories
 

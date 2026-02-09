@@ -80,16 +80,6 @@ _create_minio_users() {
     VAULT_MINIO_ACCESS_KEY="${vault_creds%%:*}"
     VAULT_MINIO_SECRET_KEY="${vault_creds##*:}"
 
-    # Store Vault's MinIO creds in minio namespace (NOT in Vault - chicken-egg)
-    log_info "[MinIO] Storing vault-minio-credentials in minio namespace..."
-    kubectl create namespace minio --dry-run=client -o yaml | kubectl apply -f -
-    kubectl create secret generic vault-minio-credentials \
-        --namespace=minio \
-        --from-literal=access_key="$VAULT_MINIO_ACCESS_KEY" \
-        --from-literal=secret_key="$VAULT_MINIO_SECRET_KEY" \
-        --dry-run=client -o yaml | kubectl apply -f -
-    log_success "[MinIO] vault-minio-credentials stored in minio namespace"
-
     # Create tf-user (terraform-state bucket only)
     local tf_creds
     tf_creds=$(_create_minio_user "tf-user" "terraform-state")
@@ -275,7 +265,7 @@ _store_minio_creds_in_vault() {
         local stored=false
 
         while [[ $attempt -le $max_attempts && "$stored" == "false" ]]; do
-            if _vault_kv_put "secret/infra/minio/tf-user" \
+            if _vault_kv_put "secret/flux-system/minio/tf-user" \
                 "access_key=${TF_MINIO_ACCESS_KEY}" \
                 "secret_key=${TF_MINIO_SECRET_KEY}"; then
                 log_success "[Phase 2d] MinIO tf-user credentials stored in Vault"
@@ -298,7 +288,7 @@ _store_minio_creds_in_vault() {
 
     # Store root credentials (for admin/rotation) - non-fatal if this fails
     if [[ -n "${MINIO_ROOT_USER:-}" && -n "${MINIO_ROOT_PASSWORD:-}" ]]; then
-        if _vault_kv_put "secret/infra/minio/root" \
+        if _vault_kv_put "secret/bootstrap/minio/root" \
             "root_user=${MINIO_ROOT_USER}" \
             "root_password=${MINIO_ROOT_PASSWORD}"; then
             log_success "[Phase 2d] MinIO root credentials stored in Vault"
@@ -322,7 +312,7 @@ _store_postgres_creds_in_vault() {
         local stored=false
 
         while [[ $attempt -le $max_attempts && "$stored" == "false" ]]; do
-            if _vault_kv_put "secret/infra/postgresql/tf-user" \
+            if _vault_kv_put "secret/bootstrap/postgresql/tf-user" \
                 "username=tf-user" \
                 "password=${TF_VAR_postgres_tf_password}"; then
                 log_success "[Phase 2d] PostgreSQL tf-user credentials stored in Vault"
@@ -345,7 +335,7 @@ _store_postgres_creds_in_vault() {
 
     # Store superuser credentials (for admin/rotation) - non-fatal if this fails
     if [[ -n "${TF_VAR_postgres_password:-}" ]]; then
-        if _vault_kv_put "secret/infra/postgresql/superuser" \
+        if _vault_kv_put "secret/bootstrap/postgresql/superuser" \
             "username=postgres" \
             "password=${TF_VAR_postgres_password}"; then
             log_success "[Phase 2d] PostgreSQL superuser credentials stored in Vault"

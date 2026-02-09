@@ -188,15 +188,34 @@ clear_bootstrap_credentials() {
     log_success "✅ All bootstrap credentials cleared from memory"
 }
 
-# Collect all VAULT_INPUT_* env vars into a string for vault kv put
-# Format: "key1=value1 key2=value2 ..."
-_collect_vault_input_secrets() {
-    local vault_args=""
+# Collect all VAULT_SECRET_* env vars
+# Convention: VAULT_SECRET_<namespace>__<path>=<value>
+#   Double underscore (__) encodes path separator (/)
+#   POSIX env var names cannot contain /
+#
+# Example:
+#   VAULT_SECRET_production__cloudflare__token=xxx
+#   -> Vault path: production/cloudflare/token
+#   -> Key name:   token (last path segment)
+#   -> Value:      xxx
+#
+# Output: one "path key=value" per line
+_collect_vault_secrets() {
     while IFS='=' read -r name value; do
-        if [[ "$name" == VAULT_INPUT_* ]]; then
-            local key="${name#VAULT_INPUT_}"
-            vault_args+="${key}=${value} "
+        if [[ "$name" == VAULT_SECRET_* ]]; then
+            local encoded="${name#VAULT_SECRET_}"
+            local path="${encoded//__//}"  # Replace __ with /
+            local key="${path##*/}"        # Last segment = key name
+            # Validate namespace prefix
+            case "$path" in
+                flux-system/*|production/*|bootstrap/*)
+                    echo "${path} ${key}=${value}"
+                    ;;
+                *)
+                    log_error "Invalid VAULT_SECRET path: $path (must start with flux-system/, production/, or bootstrap/)"
+                    return 1
+                    ;;
+            esac
         fi
-    done < <(env | grep "^VAULT_INPUT_")
-    echo "$vault_args"
+    done < <(env | grep "^VAULT_SECRET_")
 }
