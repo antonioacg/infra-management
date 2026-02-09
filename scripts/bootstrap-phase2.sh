@@ -432,6 +432,32 @@ _validate_vault_ready() {
     fi
 }
 
+# PRIVATE: Copy Vault TLS CA cert to namespaces that have SecretStores
+# SecretStore (namespace-scoped) reads caProvider from its own namespace,
+# so the vault-tls CA cert must exist in each namespace with a SecretStore.
+_copy_vault_tls_ca() {
+    log_info "[Phase 2d] Copying Vault TLS CA cert to SecretStore namespaces..."
+
+    local ca_cert
+    ca_cert=$(kubectl get secret vault-tls -n vault -o jsonpath='{.data.ca\.crt}' 2>/dev/null)
+
+    if [[ -z "$ca_cert" ]]; then
+        log_warning "[Phase 2d] vault-tls secret not found in vault namespace"
+        log_info "[Phase 2d] SecretStores will retry when the CA cert becomes available"
+        return 0
+    fi
+
+    for ns in flux-system production; do
+        # Ensure namespace exists (production may not be created by Flux yet)
+        kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - &>/dev/null
+        kubectl create secret generic vault-tls \
+            --namespace="$ns" \
+            --from-literal="ca.crt=$(echo "$ca_cert" | base64 -d)" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        log_success "[Phase 2d] vault-tls CA cert copied to $ns namespace"
+    done
+}
+
 # PRIVATE: Validate External Secrets is ready
 _validate_external_secrets_ready() {
     log_info "[Phase 2d] Validating External Secrets deployment..."
@@ -600,6 +626,7 @@ main() {
     log_phase "Phase 2d: Validation"
     _wait_for_flux_sync
     _validate_vault_ready
+    _copy_vault_tls_ca
     _write_vault_secrets
 
     # Store credentials in Vault (MUST succeed - credentials are in-memory only)
