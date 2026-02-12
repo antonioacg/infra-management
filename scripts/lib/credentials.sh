@@ -208,11 +208,11 @@ _collect_vault_secrets() {
             local key="${path##*/}"        # Last segment = key name
             # Validate namespace prefix
             case "$path" in
-                flux-system/*|production/*|bootstrap/*)
+                platform/*|production/*|recovery/*)
                     echo "${path} ${key}=${value}"
                     ;;
                 *)
-                    log_error "Invalid VAULT_SECRET path: $path (must start with flux-system/, production/, or bootstrap/)"
+                    log_error "Invalid VAULT_SECRET path: $path (must start with platform/, production/, or recovery/)"
                     return 1
                     ;;
             esac

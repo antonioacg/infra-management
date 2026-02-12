@@ -32,7 +32,7 @@ VAULT_SECRET_<namespace>__<path>=<value>
 
 Example: `VAULT_SECRET_production__cloudflare__token=xxx` writes to `secret/production/cloudflare/token` with key `token`.
 
-Valid namespace prefixes: `flux-system/`, `production/`, `bootstrap/`.
+Valid namespace prefixes: `platform/`, `production/`, `recovery/`.
 
 ### Bootstrap Time (Recommended)
 
@@ -42,7 +42,7 @@ VAULT_SECRET_production__cloudflare__token=yyy \
 ./bootstrap.sh --nodes=1 --tier=small
 ```
 
-`GITHUB_TOKEN` is handled explicitly by bootstrap (written to `secret/flux-system/git-auth`). All other secrets use the `VAULT_SECRET_*` convention.
+`GITHUB_TOKEN` is handled explicitly by bootstrap (written to `secret/platform/git-auth`). All other secrets use the `VAULT_SECRET_*` convention.
 
 ### Post-Bootstrap (GitHub Actions)
 
@@ -66,7 +66,7 @@ vault kv put secret/production/cloudflare/token token=xxx
 
 | Vault Path | Bootstrap Variable | Description | Source |
 |------------|-------------------|-------------|--------|
-| `flux-system/git-auth` | `GITHUB_TOKEN` (explicit) | PAT for Renovate/Flux | GitHub Settings |
+| `platform/git-auth` | `GITHUB_TOKEN` (explicit) | PAT for Renovate/Flux | GitHub Settings |
 | `production/cloudflare/token` | `VAULT_SECRET_production__cloudflare__token` | API Token for Cloudflared | Cloudflare Dashboard |
 | `production/datadog/api_key` | `VAULT_SECRET_production__datadog__api_key` | API Key for Datadog Agent | Datadog Dashboard |
 

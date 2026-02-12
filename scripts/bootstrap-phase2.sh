@@ -464,10 +464,10 @@ _store_github_token_in_vault() {
     fi
 
     # Store GitHub token using Kubernetes auth (non-fatal if fails - bootstrap already created k8s secret)
-    if _vault_kv_put "secret/flux-system/git-auth" \
+    if _vault_kv_put "secret/platform/git-auth" \
         "username=git" \
         "password=${GITHUB_TOKEN}"; then
-        log_success "[Phase 2d] GitHub token stored in Vault at secret/flux-system/git-auth"
+        log_success "[Phase 2d] GitHub token stored in Vault at secret/platform/git-auth"
     else
         log_warning "[Phase 2d] Failed to store GitHub token in Vault"
         log_info "[Phase 2d] ExternalSecret will use the bootstrap-created flux-git-auth secret"
