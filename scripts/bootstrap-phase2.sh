@@ -482,17 +482,34 @@ _write_vault_secrets() {
     local vault_secret_count
     vault_secret_count=$(env | grep -c "^VAULT_SECRET_" || true)
     log_debug "[Phase 2d] VAULT_SECRET_* env vars visible: ${vault_secret_count}"
+
+    if [[ "$vault_secret_count" -eq 0 ]]; then
+        log_debug "[Phase 2d] No VAULT_SECRET_* variables found"
+        return 0
+    fi
+
+    # Wait for Vault before attempting writes (user secrets seed post-bootstrap operation)
+    if ! _wait_for_vault 300; then
+        log_error "[Phase 2d] Cannot write user-provided secrets — Vault not available"
+        return 1
+    fi
+
     local count=0
+    local total=0
     while IFS=' ' read -r path kv_pair; do
+        ((total++)) || true
         if _vault_kv_put "secret/${path}" "$kv_pair"; then
             log_success "[Phase 2d] Written to secret/${path}"
-            ((count++))
+            ((count++)) || true
         else
             log_warning "[Phase 2d] Failed to write secret/${path}"
         fi
     done < <(_collect_vault_secrets)
-    [[ $count -gt 0 ]] && log_success "[Phase 2d] Wrote $count user-provided secrets" \
-                       || log_debug "[Phase 2d] No VAULT_SECRET_* variables found"
+    if [[ $count -gt 0 ]]; then
+        log_success "[Phase 2d] Wrote $count/$total user-provided secret(s)"
+    else
+        log_warning "[Phase 2d] Failed to write any user-provided secrets ($total attempted)"
+    fi
 }
 
 # PRIVATE: Validate ingress-nginx is ready
