@@ -20,6 +20,7 @@ eval "$(curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG}/infra-manageme
 smart_import "infra-management/scripts/lib/logging.sh"
 smart_import "infra-management/scripts/lib/system.sh"
 smart_import "infra-management/scripts/install-tools.sh"
+smart_import "infra-management/scripts/lib/credentials.sh"
 
 # PRIVATE: Parse command-line parameters
 _parse_parameters() {
@@ -123,6 +124,12 @@ _validate_environment() {
 
     if ! command -v git >/dev/null 2>&1; then
         log_error "[Phase 0a] git is required but not installed"
+        exit 1
+    fi
+
+    # Validate VAULT_SECRET_* env vars if present (fail-fast before bootstrap)
+    if ! validate_vault_secrets; then
+        log_error "[Phase 0a] Invalid VAULT_SECRET_* environment variables"
         exit 1
     fi
 

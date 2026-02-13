@@ -479,6 +479,9 @@ _store_github_token_in_vault() {
 # Uses Kubernetes auth via vault-secret-writer service account
 _write_vault_secrets() {
     log_info "[Phase 2d] Writing user-provided secrets to Vault..."
+    local vault_secret_count
+    vault_secret_count=$(env | grep -c "^VAULT_SECRET_" || true)
+    log_debug "[Phase 2d] VAULT_SECRET_* env vars visible: ${vault_secret_count}"
     local count=0
     while IFS=' ' read -r path kv_pair; do
         if _vault_kv_put "secret/${path}" "$kv_pair"; then

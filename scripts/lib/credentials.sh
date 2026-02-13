@@ -188,6 +188,58 @@ clear_bootstrap_credentials() {
     log_success "✅ All bootstrap credentials cleared from memory"
 }
 
+# Validate VAULT_SECRET_* env vars (fail-fast, called from Phase 0)
+# Checks encoding convention (__), path prefix, and non-empty value.
+# Returns 0 when no vars present (they are optional) or all valid.
+validate_vault_secrets() {
+    local errors=0
+    local count=0
+
+    while IFS='=' read -r name value; do
+        if [[ "$name" == VAULT_SECRET_* ]]; then
+            ((count++))
+            local encoded="${name#VAULT_SECRET_}"
+
+            # Must use __ (double underscore) to encode path separators
+            if [[ "$encoded" != *__* ]]; then
+                log_error "VAULT_SECRET invalid encoding: $name (use __ to separate path segments, e.g. VAULT_SECRET_production__app__key)"
+                ((errors++))
+                continue
+            fi
+
+            local path="${encoded//__//}"
+
+            # Must start with a valid trust domain prefix
+            case "$path" in
+                platform/*|production/*|recovery/*) ;;
+                *)
+                    log_error "VAULT_SECRET invalid path prefix: $name → $path (must start with platform/, production/, or recovery/)"
+                    ((errors++))
+                    continue
+                    ;;
+            esac
+
+            # Value must not be empty
+            if [[ -z "$value" ]]; then
+                log_error "VAULT_SECRET empty value: $name"
+                ((errors++))
+                continue
+            fi
+        fi
+    done < <(env | grep "^VAULT_SECRET_" || true)
+
+    if [[ $errors -gt 0 ]]; then
+        log_error "Found $errors invalid VAULT_SECRET_* variable(s)"
+        return 1
+    fi
+
+    if [[ $count -gt 0 ]]; then
+        log_success "[Phase 0] Validated $count VAULT_SECRET_* variable(s)"
+    fi
+
+    return 0
+}
+
 # Collect all VAULT_SECRET_* env vars
 # Convention: VAULT_SECRET_<namespace>__<path>=<value>
 #   Double underscore (__) encodes path separator (/)
@@ -206,14 +258,14 @@ _collect_vault_secrets() {
             local encoded="${name#VAULT_SECRET_}"
             local path="${encoded//__//}"  # Replace __ with /
             local key="${path##*/}"        # Last segment = key name
-            # Validate namespace prefix
+            # Validate namespace prefix (defensive — Phase 0 is the primary gate)
             case "$path" in
                 platform/*|production/*|recovery/*)
                     echo "${path} ${key}=${value}"
                     ;;
                 *)
-                    log_error "Invalid VAULT_SECRET path: $path (must start with platform/, production/, or recovery/)"
-                    return 1
+                    log_warning "Skipping invalid VAULT_SECRET path: $path (must start with platform/, production/, or recovery/)"
+                    continue
                     ;;
             esac
         fi

@@ -214,13 +214,25 @@ _stop_vault_writer() {
     VAULT_WRITER_READY=false
 }
 
+# PRIVATE: Escape a string for JSON value context
+# Handles: backslash, double quote, newline, tab, carriage return
+_json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\r'/\\r}"
+    printf '%s' "$s"
+}
+
 # Write a secret to Vault using the persistent writer pod
 # Usage: _vault_kv_put "secret/path" "key1=value1" "key2=value2" ...
+# Uses JSON stdin to avoid shell quoting issues with special characters in values
 # Returns 0 on success, 1 on failure
 _vault_kv_put() {
     local secret_path="$1"
     shift
-    local kv_pairs="$*"
     local vault_addr="https://vault.vault.svc:8200"
 
     log_debug "[Vault] Writing to ${secret_path} using Kubernetes auth..."
@@ -232,12 +244,27 @@ _vault_kv_put() {
         fi
     fi
 
-    # Execute the write command in the persistent pod
-    if kubectl exec "$VAULT_WRITER_POD" -n vault-jobs -- /bin/sh -c "
+    # Build JSON payload from kv pairs (avoids shell interpolation issues)
+    local json="{"
+    local first=true
+    for kv in "$@"; do
+        local key="${kv%%=*}"
+        local value="${kv#*=}"
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            json="${json},"
+        fi
+        json="${json}\"${key}\":\"$(_json_escape "$value")\""
+    done
+    json="${json}}"
+
+    # Pipe JSON via stdin — vault kv put reads from stdin with -
+    if printf '%s' "$json" | kubectl exec -i "$VAULT_WRITER_POD" -n vault-jobs -- /bin/sh -c "
         export VAULT_ADDR='${vault_addr}'
         export VAULT_SKIP_VERIFY=true
         export VAULT_TOKEN=\$(cat /tmp/vault-token)
-        vault kv put ${secret_path} ${kv_pairs}
+        vault kv put '${secret_path}' -
     " 2>/dev/null; then
         return 0
     else
