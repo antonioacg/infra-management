@@ -31,6 +31,7 @@ smart_import "infra-management/scripts/lib/system.sh"
 smart_import "infra-management/scripts/lib/network.sh"
 smart_import "infra-management/scripts/lib/credentials.sh"
 smart_import "infra-management/scripts/lib/minio.sh"
+smart_import "infra-management/scripts/lib/vault.sh"
 
 # PRIVATE: Parse command-line parameters
 _parse_parameters() {
