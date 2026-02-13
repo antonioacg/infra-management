@@ -621,7 +621,7 @@ main() {
     log_phase "Phase 2d: Validation"
     _wait_for_flux_sync
     _validate_vault_ready
-    _write_vault_secrets
+    _write_vault_secrets || log_warning "[Phase 2d] User-provided secrets failed — continuing with critical credentials"
 
     # Store credentials in Vault (MUST succeed - credentials are in-memory only)
     _store_minio_creds_in_vault || {

@@ -269,5 +269,5 @@ _collect_vault_secrets() {
                     ;;
             esac
         fi
-    done < <(env | grep "^VAULT_SECRET_")
+    done < <(env | grep "^VAULT_SECRET_" || true)
 }

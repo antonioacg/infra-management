@@ -123,12 +123,14 @@ _stop_vault_writer() {
     VAULT_WRITER_READY=false
 }
 
-# PRIVATE: Escape a string for JSON value context
-# Handles: backslash, double quote, newline, tab, carriage return
+# PRIVATE: Escape a string for JSON value context (RFC 7159)
+# Handles: backslash, double quote, backspace, formfeed, newline, tab, carriage return
 _json_escape() {
     local s="$1"
     s="${s//\\/\\\\}"
     s="${s//\"/\\\"}"
+    s="${s//$'\b'/\\b}"
+    s="${s//$'\f'/\\f}"
     s="${s//$'\n'/\\n}"
     s="${s//$'\t'/\\t}"
     s="${s//$'\r'/\\r}"
@@ -208,7 +210,7 @@ _store_minio_creds_in_vault() {
                 stored=true
             else
                 log_warning "[Phase 2d] MinIO tf-user storage attempt $attempt/$max_attempts failed"
-                ((attempt++))
+                ((attempt++)) || true
                 [[ $attempt -le $max_attempts ]] && sleep 5
             fi
         done
@@ -255,7 +257,7 @@ _store_postgres_creds_in_vault() {
                 stored=true
             else
                 log_warning "[Phase 2d] PostgreSQL tf-user storage attempt $attempt/$max_attempts failed"
-                ((attempt++))
+                ((attempt++)) || true
                 [[ $attempt -le $max_attempts ]] && sleep 5
             fi
         done
