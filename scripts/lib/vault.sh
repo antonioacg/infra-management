@@ -124,7 +124,7 @@ WRITER_EOF
         export VAULT_ADDR='${vault_addr}'
         export VAULT_SKIP_VERIFY=true
         TOKEN=\$(vault write -field=token auth/kubernetes/login \
-            role=secret-writer \
+            role=bootstrap-writer \
             jwt=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token))
         if [ -z \"\$TOKEN\" ]; then
             echo 'Failed to authenticate to Vault' >&2
