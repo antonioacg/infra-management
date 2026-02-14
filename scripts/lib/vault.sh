@@ -147,7 +147,27 @@ WRITER_EOF
 }
 
 # Stop and clean up the persistent Vault writer pod
+# SEC-25: Explicitly revoke Vault token before pod deletion for immediate invalidation
 _stop_vault_writer() {
+    local vault_addr="https://vault.vault.svc:8200"
+
+    # Attempt to revoke the token if pod exists and is running
+    # This provides immediate invalidation rather than waiting for TTL expiration
+    if kubectl get pod "$VAULT_WRITER_POD" -n vault-jobs &>/dev/null; then
+        log_debug "[Vault] Revoking bootstrap token before pod deletion..."
+
+        # Read token from pod and revoke it in Vault
+        # VAULT_SKIP_VERIFY: Bootstrap exception - trust-manager may not have distributed CA yet
+        kubectl exec "$VAULT_WRITER_POD" -n vault-jobs -- /bin/sh -c "
+            export VAULT_ADDR='${vault_addr}'
+            export VAULT_SKIP_VERIFY=true
+            export VAULT_TOKEN=\$(cat /tmp/vault-token 2>/dev/null || echo '')
+            if [ -n \"\$VAULT_TOKEN\" ]; then
+                vault token revoke -self 2>/dev/null || true
+            fi
+        " 2>/dev/null || true
+    fi
+
     kubectl delete pod "$VAULT_WRITER_POD" -n vault-jobs --ignore-not-found=true &>/dev/null
     VAULT_WRITER_READY=false
 }
