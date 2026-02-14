@@ -45,6 +45,8 @@ resource "kubernetes_namespace" "storage" {
       # Using baseline as a practical compromise - still provides security controls
       "pod-security.kubernetes.io/enforce"         = "baseline"
       "pod-security.kubernetes.io/enforce-version" = "latest"
+      "pod-security.kubernetes.io/audit"           = "restricted"
+      "pod-security.kubernetes.io/audit-version"   = "latest"
       "pod-security.kubernetes.io/warn"            = "restricted"
       "pod-security.kubernetes.io/warn-version"    = "latest"
     }
@@ -59,6 +61,10 @@ resource "kubernetes_namespace" "databases" {
       "purpose"                                    = "database-services"
       "pod-security.kubernetes.io/enforce"         = "restricted"
       "pod-security.kubernetes.io/enforce-version" = "latest"
+      "pod-security.kubernetes.io/audit"           = "restricted"
+      "pod-security.kubernetes.io/audit-version"   = "latest"
+      "pod-security.kubernetes.io/warn"            = "restricted"
+      "pod-security.kubernetes.io/warn-version"    = "latest"
     }
   }
 }
@@ -71,6 +77,10 @@ resource "kubernetes_namespace" "minio" {
       "purpose"                                    = "minio-admin"
       "pod-security.kubernetes.io/enforce"         = "restricted"
       "pod-security.kubernetes.io/enforce-version" = "latest"
+      "pod-security.kubernetes.io/audit"           = "restricted"
+      "pod-security.kubernetes.io/audit-version"   = "latest"
+      "pod-security.kubernetes.io/warn"            = "restricted"
+      "pod-security.kubernetes.io/warn-version"    = "latest"
     }
     annotations = {
       "description" = "Admin-only namespace for Vault's MinIO credentials (chicken-egg resolution)"

@@ -77,12 +77,37 @@ _start_vault_writer() {
     kubectl delete pod "$VAULT_WRITER_POD" -n vault-jobs --ignore-not-found=true &>/dev/null
 
     # Create a long-running pod that sleeps, waiting for exec commands
-    kubectl run "$VAULT_WRITER_POD" \
-        --namespace=vault-jobs \
-        --overrides='{"spec":{"serviceAccountName":"vault-secret-writer"}}' \
-        --image=hashicorp/vault:1.15 \
-        --restart=Never \
-        --command -- /bin/sh -c "sleep 600" &>/dev/null
+    # securityContext must satisfy PSS restricted (vault-jobs namespace)
+    kubectl apply -f - &>/dev/null <<WRITER_EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${VAULT_WRITER_POD}
+  namespace: vault-jobs
+spec:
+  serviceAccountName: vault-secret-writer
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    runAsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: writer
+    image: hashicorp/vault:1.15
+    command: ["/bin/sh", "-c", "sleep 600"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+    volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+  volumes:
+  - name: tmp
+    emptyDir: {}
+WRITER_EOF
 
     # Wait for the pod to be ready
     if ! kubectl wait --for=condition=Ready pod/"$VAULT_WRITER_POD" -n vault-jobs --timeout=60s &>/dev/null; then
