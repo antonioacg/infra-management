@@ -99,6 +99,18 @@ _generate_postgresql_tf_credentials() {
     return 0
 }
 
+# PRIVATE: Generate state encryption passphrase in-memory
+_generate_encryption_passphrase() {
+    log_info "Generating state encryption passphrase in-memory..."
+    _generate_secure_credential 48 "a-zA-Z0-9" ENCRYPTION_PASSPHRASE
+    if [[ ${#ENCRYPTION_PASSPHRASE} -lt 40 ]]; then
+        log_error "Generated encryption passphrase too short: ${#ENCRYPTION_PASSPHRASE} characters"
+        return 1
+    fi
+    export ENCRYPTION_PASSPHRASE
+    return 0
+}
+
 # PRIVATE: Generic credential validation helper
 _validate_credentials() {
     local service_name="$1"
@@ -142,6 +154,11 @@ _validate_postgresql_credentials() {
         "TF_VAR_postgres_password" "TF_VAR_postgres_tf_password"
 }
 
+_validate_encryption_passphrase() {
+    _validate_credentials "Encryption" "generate_bootstrap_credentials" \
+        "ENCRYPTION_PASSPHRASE"
+}
+
 # PRIVATE: Individual credential clearing functions
 _clear_minio_credentials() {
     _clear_credentials "MinIO" \
@@ -155,13 +172,19 @@ _clear_postgresql_credentials() {
         "TF_VAR_postgres_tf_password" "POSTGRES_TF_PASSWORD"
 }
 
-# Generate all bootstrap credentials (MinIO + PostgreSQL)
+_clear_encryption_credentials() {
+    _clear_credentials "Encryption" \
+        "ENCRYPTION_PASSPHRASE"
+}
+
+# Generate all bootstrap credentials (MinIO + PostgreSQL + Encryption)
 generate_bootstrap_credentials() {
     log_info "Generating secure bootstrap credentials in-memory..."
 
     _generate_minio_credentials
     _generate_postgresql_credentials
     _generate_postgresql_tf_credentials
+    _generate_encryption_passphrase
 
     log_success "✅ Generated all bootstrap credentials in-memory (no files created)"
     return 0
@@ -173,6 +196,7 @@ validate_bootstrap_credentials() {
 
     _validate_minio_credentials
     _validate_postgresql_credentials
+    _validate_encryption_passphrase
 
     log_success "✅ All bootstrap credentials validated"
     return 0
@@ -184,6 +208,7 @@ clear_bootstrap_credentials() {
 
     _clear_minio_credentials
     _clear_postgresql_credentials
+    _clear_encryption_credentials
 
     log_success "✅ All bootstrap credentials cleared from memory"
 }

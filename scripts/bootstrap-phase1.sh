@@ -734,8 +734,8 @@ _prepare_terraform_workspace() {
 
         log_info "[Phase 1c] Downloading Terraform files from GitHub..."
 
-        # Download bootstrap-state files using terraform init -from-module
-        if ! terraform init -from-module="git::https://${GITHUB_TOKEN}@github.com/${GITHUB_ORG}/infra-management.git//bootstrap-state?ref=${GIT_REF:-main}"; then
+        # Download bootstrap-state files using tofu init -from-module
+        if ! tofu init -from-module="git::https://${GITHUB_TOKEN}@github.com/${GITHUB_ORG}/infra-management.git//bootstrap-state?ref=${GIT_REF:-main}"; then
             log_error "[Phase 1c] Failed to download Terraform files from GitHub"
             log_info "[Phase 1c] Check GITHUB_TOKEN and repository access"
             exit 1
@@ -743,6 +743,24 @@ _prepare_terraform_workspace() {
 
         log_success "[Phase 1c] ✅ Downloaded Terraform files: $(pwd)"
     fi
+}
+
+# PRIVATE: Build TF_ENCRYPTION config from passphrase
+_build_tf_encryption_config() {
+    cat <<EOF
+key_provider "pbkdf2" "main" {
+  passphrase = "${ENCRYPTION_PASSPHRASE}"
+}
+method "aes_gcm" "primary" {
+  keys = key_provider.pbkdf2.main
+}
+state {
+  method = method.aes_gcm.primary
+}
+plan {
+  method = method.aes_gcm.primary
+}
+EOF
 }
 
 # PRIVATE: Deploy MinIO and PostgreSQL bootstrap storage components
@@ -777,12 +795,15 @@ _deploy_bootstrap_storage() {
             ;;
     esac
 
-    log_info "[Phase 1c] Initializing Terraform with LOCAL state..."
-    terraform init
+    # Set TF_ENCRYPTION for OpenTofu state encryption
+    export TF_ENCRYPTION="$(_build_tf_encryption_config)"
+
+    log_info "[Phase 1c] Initializing OpenTofu with LOCAL state..."
+    tofu init
 
     log_info "[Phase 1c] Planning bootstrap infrastructure..."
 
-    # Retry terraform apply to handle transient network errors (helm chart downloads)
+    # Retry tofu apply to handle transient network errors (helm chart downloads)
     local max_attempts=3
     local attempt=1
     local apply_success=false
@@ -796,8 +817,8 @@ _deploy_bootstrap_storage() {
         fi
 
         log_info "[Phase 1c] Creating plan: $plan_file"
-        if ! terraform plan -out="$plan_file"; then
-            log_error "[Phase 1c] Terraform plan failed on attempt $attempt"
+        if ! tofu plan -out="$plan_file"; then
+            log_error "[Phase 1c] OpenTofu plan failed on attempt $attempt"
             rm -f "$plan_file"
             if [[ $attempt -eq $max_attempts ]]; then
                 return 1
@@ -807,15 +828,15 @@ _deploy_bootstrap_storage() {
         fi
 
         log_info "[Phase 1c] Applying plan: $plan_file"
-        if terraform apply "$plan_file"; then
+        if tofu apply "$plan_file"; then
             apply_success=true
             # Clean up plan files after successful apply
             rm -f tfplan-attempt*
             break
         else
-            log_warning "[Phase 1c] Terraform apply failed on attempt $attempt"
+            log_warning "[Phase 1c] OpenTofu apply failed on attempt $attempt"
             if [[ $attempt -eq $max_attempts ]]; then
-                log_error "[Phase 1c] Terraform apply failed after $max_attempts attempts"
+                log_error "[Phase 1c] OpenTofu apply failed after $max_attempts attempts"
                 # Keep plan files for debugging
                 log_info "[Phase 1c] Plan files preserved for debugging: tfplan-attempt*"
                 return 1

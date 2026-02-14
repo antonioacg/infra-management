@@ -332,3 +332,38 @@ _store_postgres_creds_in_vault() {
         fi
     fi
 }
+
+# Store state encryption passphrase in Vault (after Vault is ready)
+# Uses Kubernetes auth via vault-secret-writer service account
+# CRITICAL: Returns non-zero on failure - tf-controller cannot decrypt state without this!
+_store_encryption_passphrase_in_vault() {
+    log_info "[Phase 2d] Storing state encryption passphrase in Vault..."
+
+    # Store encryption passphrase with retry
+    if [[ -n "${ENCRYPTION_PASSPHRASE:-}" ]]; then
+        local max_attempts=3
+        local attempt=1
+        local stored=false
+
+        while [[ $attempt -le $max_attempts && "$stored" == "false" ]]; do
+            if _vault_kv_put "secret/platform/terraform/encryption-passphrase" \
+                "passphrase=${ENCRYPTION_PASSPHRASE}"; then
+                log_success "[Phase 2d] State encryption passphrase stored in Vault"
+                stored=true
+            else
+                log_warning "[Phase 2d] Encryption passphrase storage attempt $attempt/$max_attempts failed"
+                ((attempt++)) || true
+                [[ $attempt -le $max_attempts ]] && sleep 5
+            fi
+        done
+
+        if [[ "$stored" == "false" ]]; then
+            log_error "[Phase 2d] Failed to store state encryption passphrase after $max_attempts attempts"
+            log_error "[Phase 2d] CRITICAL: tf-controller will not be able to decrypt state!"
+            return 1
+        fi
+    else
+        log_error "[Phase 2d] State encryption passphrase not found in environment (ENCRYPTION_PASSPHRASE)"
+        return 1
+    fi
+}

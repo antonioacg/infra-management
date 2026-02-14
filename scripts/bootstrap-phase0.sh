@@ -332,7 +332,7 @@ _print_success_message() {
     log_info "[Phase 0] 🔍 Testing Summary:"
     log_info "[Phase 0]   • Architecture: $DETECTED_OS/$DETECTED_ARCH"
     log_info "[Phase 0]   • GitHub: ${GITHUB_ORG}"
-    log_info "[Phase 0]   • Tools verified: kubectl, terraform, helm, flux, jq"
+    log_info "[Phase 0]   • Tools verified: kubectl, tofu, helm, flux, jq"
     log_info "[Phase 0]   • Resources: ${NODE_COUNT} nodes, ${RESOURCE_TIER} tier configured"
     log_info "[Phase 0]   • No repositories cloned (minimal Phase 0 testing)"
     log_info "[Phase 0]   • No workspace created (tools validated only)"

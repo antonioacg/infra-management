@@ -17,7 +17,7 @@ smart_import "infra-management/scripts/lib/network.sh"
 log_debug "Install tools script starting with LOG_LEVEL=$LOG_LEVEL"
 
 # Definitive tool list - all tools we install/manage
-BOOTSTRAP_TOOLS=("kubectl" "terraform" "helm" "flux" "yq" "mc")
+BOOTSTRAP_TOOLS=("kubectl" "tofu" "helm" "flux" "yq" "mc")
 
 # Function to check if a command exists
 # PRIVATE: Check if a command exists in PATH
@@ -207,28 +207,28 @@ _install_helm() {
     log_success "Helm installed"
 }
 
-# PRIVATE: Install Terraform
-_install_terraform() {
-    if _command_exists terraform; then
-        log_success "Terraform already installed ($(terraform version -json 2>/dev/null | jq -r .terraform_version || echo 'version unknown'))"
+# PRIVATE: Install OpenTofu
+_install_tofu() {
+    if _command_exists tofu; then
+        log_success "OpenTofu already installed ($(tofu version -json 2>/dev/null | jq -r .terraform_version || echo 'version unknown'))"
         return 0
     fi
 
-    log_info "Installing Terraform"
+    log_info "Installing OpenTofu"
 
-    local TERRAFORM_VERSION="${TERRAFORM_VERSION:-1.6.6}"
+    local TOFU_VERSION="${TOFU_VERSION:-1.8.8}"
 
-    # Download and install Terraform with retry logic
-    local TERRAFORM_ZIP="terraform_${TERRAFORM_VERSION}_${DETECTED_OS}_${DETECTED_ARCH}.zip"
-    local TERRAFORM_URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${TERRAFORM_ZIP}"
+    # Download and install OpenTofu with retry logic
+    local TOFU_ZIP="tofu_${TOFU_VERSION}_${DETECTED_OS}_${DETECTED_ARCH}.zip"
+    local TOFU_URL="https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/${TOFU_ZIP}"
 
-    if curl_with_retry "$TERRAFORM_URL" "$TERRAFORM_ZIP"; then
-        _extract_and_install_binary "$TERRAFORM_ZIP" "terraform"
+    if curl_with_retry "$TOFU_URL" "$TOFU_ZIP"; then
+        _extract_and_install_binary "$TOFU_ZIP" "tofu"
     else
         return 1
     fi
 
-    log_success "Terraform ${TERRAFORM_VERSION} installed"
+    log_success "OpenTofu ${TOFU_VERSION} installed"
 }
 
 # PRIVATE: Install MinIO Client (mc)
@@ -333,7 +333,7 @@ verify_tools() {
             case "$tool" in
                 kubectl) version=$(kubectl version --client --short 2>/dev/null | cut -d' ' -f3 || echo "unknown") ;;
                 flux) version=$(flux version --client 2>/dev/null | grep 'flux version' | cut -d' ' -f3 || echo "unknown") ;;
-                terraform) version=$(terraform version -json 2>/dev/null | jq -r .terraform_version || echo "unknown") ;;
+                tofu) version=$(tofu version -json 2>/dev/null | jq -r .terraform_version || echo "unknown") ;;
                 yq) version=$(yq --version 2>/dev/null | cut -d' ' -f4 || echo "unknown") ;;
                 mc) version=$(mc --version 2>/dev/null | head -1 || echo "unknown") ;;
                 *) version=$(${tool} --version 2>/dev/null | head -1 || echo "unknown") ;;
@@ -376,7 +376,7 @@ main() {
     _install_kubectl
     _install_helm
     _install_flux
-    _install_terraform
+    _install_tofu
     _install_yq
     _install_mc  # MinIO Client for S3 connectivity testing
 
@@ -389,7 +389,7 @@ main() {
     log_info "Installed tools:"
     log_info "  • kubectl - Kubernetes CLI"
     log_info "  • flux - GitOps CLI"
-    log_info "  • terraform - Infrastructure as code"
+    log_info "  • tofu - OpenTofu (Terraform-compatible IaC with state encryption)"
     log_info "  • mc - MinIO Client for S3 connectivity"
     echo ""
 }
@@ -420,7 +420,7 @@ _validate_tools() {
         "kubectl:kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null || echo 'not installed'"
         "flux:flux version --client 2>/dev/null | grep 'flux version' || echo 'not installed'"
         "helm:helm version --short 2>/dev/null || echo 'not installed'"
-        "terraform:terraform version -json 2>/dev/null | jq -r .terraform_version || echo 'not installed'"
+        "tofu:tofu version -json 2>/dev/null | jq -r .terraform_version || echo 'not installed'"
         "mc:mc --version 2>/dev/null | head -1 || echo 'not installed'"
     )
 
@@ -439,7 +439,7 @@ _validate_tools() {
 
     echo ""
     log_info "🎯 Installation Requirements:"
-    local required_tools=("curl" "wget" "git" "jq" "unzip" "kubectl" "flux" "helm" "terraform")
+    local required_tools=("curl" "wget" "git" "jq" "unzip" "kubectl" "flux" "helm" "tofu")
     local missing_tools=()
 
     for tool in "${required_tools[@]}"; do

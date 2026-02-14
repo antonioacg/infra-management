@@ -28,7 +28,7 @@ _confirm_cleanup() {
     echo
     log_warning "This will completely remove:"
     echo "  • k3s cluster and all data"
-    echo "  • All installed tools (kubectl, terraform, helm, flux, yq, mc)"
+    echo "  • All installed tools (kubectl, tofu, helm, flux, yq, mc)"
     echo "  • All bootstrap state directories"
     echo "  • All running port-forwards and processes"
     echo
@@ -338,11 +338,11 @@ _cleanup_processes() {
         log_debug "No k3s processes found"
     fi
 
-    # Kill terraform processes
-    if pkill -f 'terraform' 2>/dev/null; then
-        log_debug "terraform processes killed"
+    # Kill tofu processes
+    if pkill -f 'tofu' 2>/dev/null; then
+        log_debug "tofu processes killed"
     else
-        log_debug "No terraform processes found"
+        log_debug "No tofu processes found"
     fi
 
     log_success "Processes cleaned up"
@@ -440,7 +440,7 @@ _parse_parameters() {
                 echo
                 echo "Full cleanup (default):"
                 echo "  • k3s cluster and all Kubernetes resources"
-                echo "  • All installed tools (kubectl, terraform, helm, flux, yq, mc)"
+                echo "  • All installed tools (kubectl, tofu, helm, flux, yq, mc)"
                 echo "  • All bootstrap directories and temporary files"
                 echo "  • All running port-forwards and background processes"
                 echo
