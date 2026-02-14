@@ -113,6 +113,12 @@ _cleanup() {
         log_info "[Phase 2] Stopped MinIO port-forward (PID: $MINIO_PF_PID)"
     fi
 
+    # Stop vault writer pod if running (SEC-24: ensure cleanup on interrupt/failure)
+    _stop_vault_writer 2>/dev/null || true
+
+    # Clear sensitive environment variables on failure/interrupt (SEC-24)
+    _clear_phase2_credentials 2>/dev/null || true
+
     # Clean shared temp directory (idempotent)
     rm -rf "$BOOTSTRAP_TEMP_DIR" 2>/dev/null || true
 
@@ -123,6 +129,17 @@ _cleanup() {
         log_error "[Phase 2] Phase 2 failed with exit code $exit_code"
         log_info "[Phase 2] Check logs above for specific error details"
     fi
+}
+
+# PRIVATE: Clear sensitive credentials from environment (SEC-24)
+_clear_phase2_credentials() {
+    log_debug "[Phase 2] Clearing sensitive environment variables"
+    unset GITHUB_TOKEN 2>/dev/null || true
+    unset TF_VAR_minio_root_user TF_VAR_minio_root_password 2>/dev/null || true
+    unset TF_VAR_postgres_password TF_VAR_postgres_tf_password 2>/dev/null || true
+    for var in $(env | grep "^VAULT_SECRET_" | cut -d= -f1 || true); do
+        unset "$var" 2>/dev/null || true
+    done
 }
 
 # PRIVATE: Validate Phase 1 dependencies and credentials
@@ -623,6 +640,13 @@ main() {
     _validate_vault_ready
     _write_vault_secrets || log_warning "[Phase 2d] User-provided secrets failed — continuing with critical credentials"
 
+    # SEC-24: Clear VAULT_SECRET_* variables immediately after writing to Vault
+    # These are not needed for the remaining bootstrap operations
+    for var in $(env | grep "^VAULT_SECRET_" | cut -d= -f1 || true); do
+        unset "$var" 2>/dev/null || true
+    done
+    log_debug "[Phase 2d] Cleared VAULT_SECRET_* environment variables"
+
     # Store credentials in Vault (MUST succeed - credentials are in-memory only)
     _store_minio_creds_in_vault || {
         log_error "FATAL: Failed to store MinIO credentials in Vault"
@@ -640,6 +664,13 @@ main() {
 
     _validate_external_secrets_ready
     _store_github_token_in_vault
+
+    # SEC-24: Clear sensitive environment variables after Vault storage
+    # GITHUB_TOKEN not used after Phase 2d (Flux uses K8s secret created in Phase 2c)
+    # VAULT_SECRET_* cleared after writing to Vault
+    _clear_phase2_credentials
+    log_debug "[Phase 2d] Cleared sensitive environment variables"
+
     _stop_vault_writer
     _validate_ingress_ready
     _show_flux_status

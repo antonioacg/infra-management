@@ -108,7 +108,8 @@ spec:
       mountPath: /tmp
   volumes:
   - name: tmp
-    emptyDir: {}
+    emptyDir:
+      medium: Memory  # SEC-24: Force RAM-only, never touches disk
 WRITER_EOF
 
     # Wait for the pod to be ready

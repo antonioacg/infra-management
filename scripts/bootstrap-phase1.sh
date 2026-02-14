@@ -74,10 +74,16 @@ if [[ "${USE_LOCAL_IMPORTS:-false}" == "true" ]]; then
     # Local development: bootstrap-state is sibling to scripts/
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     BOOTSTRAP_STATE_DIR="$(dirname "$SCRIPT_DIR")/bootstrap-state"
+    # SEC-24/SEC-07: Ensure secure permissions on state directory
+    if [[ -d "$BOOTSTRAP_STATE_DIR" ]]; then
+        chmod 0700 "$BOOTSTRAP_STATE_DIR"
+    fi
 else
     # Remote usage: use shared bootstrap temp directory
     BOOTSTRAP_STATE_DIR="${BOOTSTRAP_TEMP_DIR:-/tmp/bootstrap-state}"
     mkdir -p "$BOOTSTRAP_STATE_DIR"
+    # SEC-24/SEC-07: Restrict permissions to owner only (0700)
+    chmod 0700 "$BOOTSTRAP_STATE_DIR"
 fi
 
 # PRIVATE: Cleanup function for Phase 1
