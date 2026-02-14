@@ -109,7 +109,7 @@ spec:
   volumes:
   - name: tmp
     emptyDir:
-      medium: Memory  # SEC-24: Force RAM-only, never touches disk
+      medium: Memory  # SEC-25: Force RAM-only, never touches disk
 WRITER_EOF
 
     # Wait for the pod to be ready

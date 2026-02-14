@@ -113,10 +113,10 @@ _cleanup() {
         log_info "[Phase 2] Stopped MinIO port-forward (PID: $MINIO_PF_PID)"
     fi
 
-    # Stop vault writer pod if running (SEC-24: ensure cleanup on interrupt/failure)
+    # Stop vault writer pod if running (SEC-25: ensure cleanup on interrupt/failure)
     _stop_vault_writer 2>/dev/null || true
 
-    # Clear sensitive environment variables on failure/interrupt (SEC-24)
+    # Clear sensitive environment variables on failure/interrupt (SEC-25)
     _clear_phase2_credentials 2>/dev/null || true
 
     # Clean shared temp directory (idempotent)
@@ -131,7 +131,7 @@ _cleanup() {
     fi
 }
 
-# PRIVATE: Clear sensitive credentials from environment (SEC-24)
+# PRIVATE: Clear sensitive credentials from environment (SEC-25)
 _clear_phase2_credentials() {
     log_debug "[Phase 2] Clearing sensitive environment variables"
     unset GITHUB_TOKEN 2>/dev/null || true
@@ -640,7 +640,7 @@ main() {
     _validate_vault_ready
     _write_vault_secrets || log_warning "[Phase 2d] User-provided secrets failed — continuing with critical credentials"
 
-    # SEC-24: Clear VAULT_SECRET_* variables immediately after writing to Vault
+    # SEC-25: Clear VAULT_SECRET_* variables immediately after writing to Vault
     # These are not needed for the remaining bootstrap operations
     for var in $(env | grep "^VAULT_SECRET_" | cut -d= -f1 || true); do
         unset "$var" 2>/dev/null || true
@@ -665,7 +665,7 @@ main() {
     _validate_external_secrets_ready
     _store_github_token_in_vault
 
-    # SEC-24: Clear sensitive environment variables after Vault storage
+    # SEC-25: Clear sensitive environment variables after Vault storage
     # GITHUB_TOKEN not used after Phase 2d (Flux uses K8s secret created in Phase 2c)
     # VAULT_SECRET_* cleared after writing to Vault
     _clear_phase2_credentials
