@@ -26,6 +26,8 @@ _wait_for_vault() {
 
             if [[ "$ready" == "True" ]]; then
                 # Check Vault is unsealed (status doesn't require auth)
+                # VAULT_SKIP_VERIFY: Bootstrap exception - trust-manager may not have
+                # distributed the CA yet. Ephemeral pod, in-cluster, NetworkPolicy-constrained.
                 if kubectl exec -n vault "$vault_pod" -- env \
                     VAULT_SKIP_VERIFY=true \
                     vault status &>/dev/null; then
@@ -120,6 +122,7 @@ WRITER_EOF
     sleep 3
 
     # Authenticate and store token in a file inside the pod
+    # VAULT_SKIP_VERIFY: Bootstrap exception - trust-manager may not have distributed CA yet
     if ! kubectl exec "$VAULT_WRITER_POD" -n vault-jobs -- /bin/sh -c "
         export VAULT_ADDR='${vault_addr}'
         export VAULT_SKIP_VERIFY=true
@@ -196,6 +199,7 @@ _vault_kv_put() {
     json="${json}}"
 
     # Pipe JSON via stdin — vault kv put reads from stdin with -
+    # VAULT_SKIP_VERIFY: Bootstrap exception - trust-manager may not have distributed CA yet
     if printf '%s' "$json" | kubectl exec -i "$VAULT_WRITER_POD" -n vault-jobs -- /bin/sh -c "
         export VAULT_ADDR='${vault_addr}'
         export VAULT_SKIP_VERIFY=true
