@@ -111,6 +111,19 @@ _generate_encryption_passphrase() {
     return 0
 }
 
+# PRIVATE: Generate Vault backup encryption key (INFRA-06)
+_generate_backup_key() {
+    log_info "Generating Vault backup encryption key..."
+    # Generate 64-character hex string (32 bytes = 256 bits)
+    VAULT_BACKUP_KEY=$(openssl rand -hex 32)
+    if [[ ${#VAULT_BACKUP_KEY} -lt 64 ]]; then
+        log_error "Generated backup key too short: ${#VAULT_BACKUP_KEY} characters"
+        return 1
+    fi
+    export VAULT_BACKUP_KEY
+    return 0
+}
+
 # PRIVATE: Generic credential validation helper
 _validate_credentials() {
     local service_name="$1"
@@ -177,7 +190,12 @@ _clear_encryption_credentials() {
         "ENCRYPTION_PASSPHRASE"
 }
 
-# Generate all bootstrap credentials (MinIO + PostgreSQL + Encryption)
+_clear_backup_credentials() {
+    _clear_credentials "Backup" \
+        "VAULT_BACKUP_KEY"
+}
+
+# Generate all bootstrap credentials (MinIO + PostgreSQL + Encryption + Backup)
 generate_bootstrap_credentials() {
     log_info "Generating secure bootstrap credentials in-memory..."
 
@@ -185,6 +203,7 @@ generate_bootstrap_credentials() {
     _generate_postgresql_credentials
     _generate_postgresql_tf_credentials
     _generate_encryption_passphrase
+    _generate_backup_key
 
     log_success "✅ Generated all bootstrap credentials in-memory (no files created)"
     return 0
@@ -209,6 +228,7 @@ clear_bootstrap_credentials() {
     _clear_minio_credentials
     _clear_postgresql_credentials
     _clear_encryption_credentials
+    _clear_backup_credentials
 
     log_success "✅ All bootstrap credentials cleared from memory"
 }

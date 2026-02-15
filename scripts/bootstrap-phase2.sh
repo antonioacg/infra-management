@@ -138,6 +138,7 @@ _clear_phase2_credentials() {
     unset TF_VAR_minio_root_user TF_VAR_minio_root_password 2>/dev/null || true
     unset TF_VAR_postgres_password TF_VAR_postgres_tf_password 2>/dev/null || true
     unset ENCRYPTION_PASSPHRASE 2>/dev/null || true
+    unset VAULT_BACKUP_KEY 2>/dev/null || true
     unset TF_ENCRYPTION 2>/dev/null || true
     for var in $(env | grep "^VAULT_SECRET_" | cut -d= -f1 || true); do
         unset "$var" 2>/dev/null || true
@@ -668,6 +669,14 @@ main() {
     _store_encryption_passphrase_in_vault || {
         log_error "FATAL: Failed to store encryption passphrase in Vault"
         log_error "tf-controller will not be able to decrypt state"
+        _stop_vault_writer
+        exit 1
+    }
+
+    # INFRA-06: Store backup key in Vault and print to console
+    _store_backup_key_in_vault || {
+        log_error "FATAL: Failed to store backup key in Vault"
+        log_error "Backups will not be encrypted"
         _stop_vault_writer
         exit 1
     }

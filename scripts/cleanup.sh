@@ -314,6 +314,26 @@ _cleanup_directories() {
     log_success "Removed $removed_count directories"
 }
 
+# PRIVATE: Cleanup Vault backups
+_cleanup_vault_backups() {
+    # INFRA-06: Cleanup Vault backups unless --preserve-backup is set
+    if [[ "${PRESERVE_BACKUP:-false}" == "true" ]]; then
+        log_info "Preserving Vault backups (--preserve-backup)"
+        return 0
+    fi
+
+    if [[ -d "/var/backups/vault" ]]; then
+        log_info "Removing Vault backups..."
+        if rm -rf /var/backups/vault/* 2>/dev/null; then
+            log_success "  ✅ Vault backups removed"
+        else
+            log_debug "  No Vault backups to remove"
+        fi
+    else
+        log_debug "  /var/backups/vault not found"
+    fi
+}
+
 # PRIVATE: Cleanup running processes
 _cleanup_processes() {
     log_info "Stopping running processes..."
@@ -402,11 +422,16 @@ print_success() {
 _parse_parameters() {
     local force_cleanup_var=""
     local kubectl_contexts_var=""
+    local preserve_backup_var="false"
 
     while [[ $# -gt 0 ]]; do
         case $1 in
             --force)
                 force_cleanup_var=true
+                shift
+                ;;
+            --preserve-backup)
+                preserve_backup_var="true"
                 shift
                 ;;
             --contexts=*)
@@ -421,10 +446,11 @@ _parse_parameters() {
                 echo "  curl -sfL https://raw.githubusercontent.com/${GITHUB_ORG:-antonioacg}/infra-management/${GIT_REF:-main}/scripts/cleanup.sh | bash -s -- [--force]"
                 echo
                 echo "Options:"
-                echo "  --force        Skip confirmation prompt"
-                echo "  --skip-phase0  Preserve tools and directories (only remove k3s)"
-                echo "  --contexts     Comma-separated list of kubectl contexts to remove"
-                echo "  --help         Show this help message"
+                echo "  --force            Skip confirmation prompt"
+                echo "  --preserve-backup  Preserve Vault backups in /var/backups/vault/"
+                echo "  --skip-phase0      Preserve tools and directories (only remove k3s)"
+                echo "  --contexts         Comma-separated list of kubectl contexts to remove"
+                echo "  --help             Show this help message"
                 echo
                 echo "Examples:"
                 echo "  # Interactive cleanup with confirmation"
@@ -467,6 +493,7 @@ _parse_parameters() {
     # Export parsed values to be used by main logic
     FORCE_CLEANUP="$force_cleanup_var"
     KUBECTL_CONTEXTS="$kubectl_contexts_var"
+    PRESERVE_BACKUP="$preserve_backup_var"
 }
 
 main() {
@@ -490,6 +517,7 @@ main() {
     _cleanup_luks_container
     _cleanup_tools
     _cleanup_directories
+    _cleanup_vault_backups
 
     if verify_cleanup; then
         print_success

@@ -367,3 +367,51 @@ _store_encryption_passphrase_in_vault() {
         return 1
     fi
 }
+
+# INFRA-06: Store backup encryption key in Vault and print to console
+# Uses operator-held key pattern - key must be recorded by operator for recovery
+_store_backup_key_in_vault() {
+    log_info "[Phase 2d] Storing Vault backup encryption key..."
+
+    if [[ -z "${VAULT_BACKUP_KEY:-}" ]]; then
+        log_error "[Phase 2d] Vault backup key not found in environment (VAULT_BACKUP_KEY)"
+        return 1
+    fi
+
+    local max_attempts=3
+    local attempt=1
+    local stored=false
+
+    while [[ $attempt -le $max_attempts && "$stored" == "false" ]]; do
+        if _vault_kv_put "secret/platform/backup/key" \
+            "passphrase=${VAULT_BACKUP_KEY}"; then
+            stored=true
+        else
+            log_warning "[Phase 2d] Backup key storage attempt $attempt/$max_attempts failed"
+            ((attempt++)) || true
+            [[ $attempt -le $max_attempts ]] && sleep 5
+        fi
+    done
+
+    if [[ "$stored" == "false" ]]; then
+        log_error "[Phase 2d] Failed to store backup key after $max_attempts attempts"
+        return 1
+    fi
+
+    # Print the key to console for operator to record (CRITICAL for recovery)
+    echo
+    log_info "========================================"
+    log_info "VAULT BACKUP ENCRYPTION KEY"
+    log_info "========================================"
+    log_info "This key encrypts Vault backups."
+    log_info "SAVE THIS KEY SECURELY - you need it for DR."
+    log_info ""
+    log_info "Backup Key: ${VAULT_BACKUP_KEY}"
+    log_info ""
+    log_info "Store in password manager or safe."
+    log_info "Lost keys cannot be recovered."
+    log_info "========================================"
+    echo
+
+    log_success "[Phase 2d] Vault backup encryption key stored in Vault"
+}
